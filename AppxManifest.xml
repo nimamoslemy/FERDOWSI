@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap uap10 rescap desktop6">
+
+  <Identity
+    Name="FERDOWSI.CopilotAI"
+    Publisher="CN=FERDOWSI"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>FERDOWSI Writing Assistant</DisplayName>
+    <PublisherDisplayName>FERDOWSI</PublisherDisplayName>
+    <Logo>FERDOWSI.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22621.0" MaxVersionTested="10.0.26200.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="FERDOWSI" Executable="FERDOWSI.exe" uap10:TrustLevel="mediumIL" uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements
+        DisplayName="FERDOWSI"
+        Description="Above-Cursor English, Persian &amp; Finglish Writing Assistant &amp; AI Dictionary"
+        BackgroundColor="#10B981"
+        Square150x150Logo="FERDOWSI.png"
+        Square44x44Logo="FERDOWSI.png"
+        AppListEntry="default" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="systemAIModels" />
+  </Capabilities>
+</Package>

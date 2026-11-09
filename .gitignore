@@ -1,0 +1,19 @@
+# User private settings & API keys (never commit)
+settings.json
+secrets.json
+.env
+.env.*
+*.key
+*.pem
+*.pfx
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Debug symbols & temp build artifacts
+*.pdb
+*.obj
+*.exp
+*.lib
