@@ -45,7 +45,7 @@ def load_personal_key_probes() -> Tuple[bool, List[Tuple[str, bytes]]]:
         if os.path.isfile(cfg_path):
             try:
                 data = json.loads(open(cfg_path, "r", encoding="utf-8-sig").read())
-                for key_field in ("GoogleApiKey", "DeepSeekApiKey", "DeepgramApiKey"):
+                for key_field in ("GoogleApiKey", "DeepSeekApiKey", "DeepgramApiKey", "GroqApiKey", "VoiceAiApiKey"):
                     key = str(data.get(key_field) or "").strip()
                     if len(key) >= 12:
                         found_user_key = True
@@ -168,7 +168,7 @@ def main() -> int:
 
     report_lines = [
         "======================================================================",
-        "FERDOWSI v1.0.0 — PRE-PUBLISH SECURITY & PRIVACY AUDIT REPORT",
+        "FERDOWSI v2.0.0 — PRE-PUBLISH SECURITY & PRIVACY AUDIT REPORT",
         "======================================================================",
         f"Project Source & Binary Files Scanned   : {proj_count}",
         f"Installer & ZIP Archive Entries Scanned : {inst_count}",

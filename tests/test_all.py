@@ -152,6 +152,44 @@ def main() -> int:
     nlp_engine.handle_request({"id": 111, "action": "configure", "ai_provider": "auto"})
     print("[PASS] Google Gemini + DeepSeek + Deepgram + 'AI Only' strict mode verified")
 
+    # 2d. Test FERDOWSI v2 Voice Cleanup (strict non-responding transcript cleanup) vs Exact Voice + Read Aloud + Groq config
+    v2_cfg = nlp_engine.handle_request({
+        "id": 112,
+        "action": "configure",
+        "groq_api_key": "",
+        "groq_model": "whisper-large-v3-turbo",
+        "stt_provider": "auto",
+        "voice_mode": "cleanup",
+        "voice_ai_api_key": "",
+        "tts_provider": "windows_sapi",
+    })
+    assert v2_cfg["ok"] and v2_cfg["groq_model"] == "whisper-large-v3-turbo" and v2_cfg["voice_mode"] == "cleanup"
+
+    # Spoken question with fillers must ONLY be cleaned into the question itself, NEVER answered!
+    spoken_question = "um uh what time is the meeting tomorrow"
+    clean_q = nlp_engine.handle_request({
+        "id": 113,
+        "action": "clean_voice_text",
+        "text": spoken_question,
+        "voice_mode": "cleanup",
+        "use_llm": False,
+    })
+    assert clean_q["ok"] and "what time is the meeting tomorrow" in clean_q["text"].lower(), f"Got: {clean_q}"
+    # Verify anti-chatbot guard rejects conversational assistant replies
+    assert not nlp_engine._is_safe_cleaned_transcript(spoken_question, "Sure! I don't have access to your calendar, so I cannot check your meeting time.")
+    assert not nlp_engine._is_safe_cleaned_transcript("can you write an email to john", "Certainly, here is an email you can send to John:")
+    assert nlp_engine._is_safe_cleaned_transcript(spoken_question, "What time is the meeting tomorrow?")
+
+    # Exact mode must keep spoken words verbatim
+    exact_q = nlp_engine.handle_request({
+        "id": 114,
+        "action": "clean_voice_text",
+        "text": spoken_question,
+        "voice_mode": "exact",
+    })
+    assert exact_q["ok"] and exact_q["text"] == spoken_question and exact_q["voice_mode"] == "exact"
+    print(f"[PASS] FERDOWSI v2 Voice Modes verified: Cleanup='{clean_q['text']}' (non-responding guard active) | Exact='{exact_q['text']}'")
+
     for tone in ("fluent", "formal", "casual", "concise", "expand", "persuasive"):
         rw = nlp_engine.handle_request({
             "id": 2,

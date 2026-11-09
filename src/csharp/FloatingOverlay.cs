@@ -55,9 +55,11 @@ namespace GrammerV
         private UiaInspectionResult _cachedUia;
         private DateTime _lastActivityUtc;
 
-        // Voice dictation state
+        // Voice dictation & Read Aloud state
         private bool _isVoiceRecording;
         private bool _voiceBusy;
+        private bool _isReadingAloud;
+        private System.Media.SoundPlayer _ttsPlayer;
 
         private int _lastMovedX;
         private int _lastMovedY;
@@ -81,6 +83,8 @@ namespace GrammerV
         private TextBlock _pillBadgeText;
         private TextBlock _pillSummaryText;
         private Button _pillMicBtn;
+        private Button _pillVoiceModeBtn;
+        private Button _pillReadAloudBtn;
         private Button _pillQuickFixBtn;
 
         // UI Elements - Expanded Card
@@ -88,6 +92,8 @@ namespace GrammerV
         private TextBlock _cardSourceBadge;
         private TextBlock _cardTimingBadge;
         private Button _cardMicBtn;
+        private Button _cardVoiceModeBtn;
+        private Button _cardReadAloudBtn;
         private Button _aiModeToggleBtn;
         private Button _tabCorrectBtn;
         private Button _tabRewordBtn;
@@ -139,6 +145,8 @@ namespace GrammerV
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     UpdateAiButtonAppearance();
+                    UpdateVoiceModeAppearance();
+                    UpdateShortWindowButtonsVisibility();
                     if (_isExpanded && !string.IsNullOrEmpty(_activeSourceText))
                     {
                         TriggerAnalysis(_activeSourceText, true, false);
@@ -342,10 +350,23 @@ namespace GrammerV
             _pillSummaryText.TextTrimming = TextTrimming.CharacterEllipsis;
 
             _pillMicBtn = CreateSmallButton("🎤", BgChip, EmeraldSoft);
-            _pillMicBtn.Margin = new Thickness(2, 0, 4, 0);
+            _pillMicBtn.Margin = new Thickness(2, 0, 3, 0);
             _pillMicBtn.Padding = new Thickness(6, 2, 6, 2);
-            _pillMicBtn.ToolTip = "Write with your voice (Deepgram Speech-to-Text) — click to start/stop recording";
+            _pillMicBtn.ToolTip = "Write with your voice (Groq Whisper / Deepgram) — click to start/stop recording";
             _pillMicBtn.Click += OnMicButtonClicked;
+
+            _pillVoiceModeBtn = CreateSmallButton("Clean", EmeraldDark, EmeraldSoft);
+            _pillVoiceModeBtn.Margin = new Thickness(0, 0, 3, 0);
+            _pillVoiceModeBtn.Padding = new Thickness(5, 2, 5, 2);
+            _pillVoiceModeBtn.FontSize = 10.2;
+            _pillVoiceModeBtn.ToolTip = "Toggle Voice Output Mode: 'Cleanup Voice' (cleans grammar & fillers without answering) vs 'Exact Voice' (exact words spoken)";
+            _pillVoiceModeBtn.Click += OnVoiceModeToggleClicked;
+
+            _pillReadAloudBtn = CreateSmallButton("🔊", BgChip, EmeraldSoft);
+            _pillReadAloudBtn.Margin = new Thickness(0, 0, 3, 0);
+            _pillReadAloudBtn.Padding = new Thickness(5, 2, 5, 2);
+            _pillReadAloudBtn.ToolTip = "Read Aloud (Gemini / Deepgram Aura / Voice AI) — click to listen or stop";
+            _pillReadAloudBtn.Click += OnReadAloudClicked;
 
             _pillQuickFixBtn = CreateSmallButton("Fix ✨", Emerald, Brushes.White);
             _pillQuickFixBtn.Margin = new Thickness(2, 0, 4, 0);
@@ -371,13 +392,15 @@ namespace GrammerV
             pillRow.Children.Add(_pillBadgeBorder);
             pillRow.Children.Add(_pillSummaryText);
             pillRow.Children.Add(_pillMicBtn);
+            pillRow.Children.Add(_pillVoiceModeBtn);
+            pillRow.Children.Add(_pillReadAloudBtn);
             pillRow.Children.Add(_pillQuickFixBtn);
             pillRow.Children.Add(pillCloseBtn);
             _pillRoot.Child = pillRow;
 
             // 2. Expanded Assistant Card (Above cursor)
             _cardRoot = new Border();
-            _cardRoot.Width = 456;
+            _cardRoot.Width = 496;
             _cardRoot.Background = BgDark;
             _cardRoot.BorderBrush = BorderSubtle;
             _cardRoot.BorderThickness = new Thickness(1.2);
@@ -414,7 +437,7 @@ namespace GrammerV
             brandPanel.Children.Add(miniLogo);
             brandPanel.Children.Add(new TextBlock
             {
-                Text = "FERDOWSI", Foreground = TextPrimary, FontWeight = FontWeights.Bold,
+                Text = "FERDOWSI v2", Foreground = TextPrimary, FontWeight = FontWeights.Bold,
                 FontSize = 13.5, VerticalAlignment = VerticalAlignment.Center
             });
 
@@ -430,12 +453,22 @@ namespace GrammerV
             headerActions.Orientation = Orientation.Horizontal;
             headerActions.HorizontalAlignment = HorizontalAlignment.Right;
 
-            _cardMicBtn = CreateSmallButton("🎤 Voice", BgChip, EmeraldSoft);
-            _cardMicBtn.ToolTip = "Write with your voice (Deepgram Speech-to-Text) — click to start/stop recording";
-            _cardMicBtn.Margin = new Thickness(0, 0, 4, 0);
+            _cardMicBtn = CreateSmallButton("🎤", BgChip, EmeraldSoft);
+            _cardMicBtn.ToolTip = "Write with your voice (Groq Whisper / Deepgram) — click to start/stop recording";
+            _cardMicBtn.Margin = new Thickness(0, 0, 3, 0);
             _cardMicBtn.Click += OnMicButtonClicked;
 
-            Button grabBtn = CreateSmallButton("↻ Full Box", BgChip, TextPrimary);
+            _cardVoiceModeBtn = CreateSmallButton("Voice: Clean ✨", EmeraldDark, EmeraldSoft);
+            _cardVoiceModeBtn.ToolTip = "Toggle Voice Mode: 'Cleanup Voice' (cleans voice transcript without answering) vs 'Exact Voice' (exact words spoken)";
+            _cardVoiceModeBtn.Margin = new Thickness(0, 0, 3, 0);
+            _cardVoiceModeBtn.Click += OnVoiceModeToggleClicked;
+
+            _cardReadAloudBtn = CreateSmallButton("🔊 Read", BgChip, EmeraldSoft);
+            _cardReadAloudBtn.ToolTip = "Read Aloud (Gemini / Deepgram Aura / Voice AI)";
+            _cardReadAloudBtn.Margin = new Thickness(0, 0, 4, 0);
+            _cardReadAloudBtn.Click += OnReadAloudClicked;
+
+            Button grabBtn = CreateSmallButton("↻ Box", BgChip, TextPrimary);
             grabBtn.ToolTip = "Capture the entire sentence/box or current selection from target window";
             grabBtn.Margin = new Thickness(0, 0, 4, 0);
             grabBtn.Click += delegate { GrabFreshTextFromTarget(true, true); };
@@ -490,6 +523,8 @@ namespace GrammerV
             collapseBtn.Click += delegate { SetExpanded(false); };
 
             headerActions.Children.Add(_cardMicBtn);
+            headerActions.Children.Add(_cardVoiceModeBtn);
+            headerActions.Children.Add(_cardReadAloudBtn);
             headerActions.Children.Add(grabBtn);
             headerActions.Children.Add(_aiModeToggleBtn);
             headerActions.Children.Add(helpBtn);
@@ -690,6 +725,8 @@ namespace GrammerV
             Content = host;
 
             UpdateAiButtonAppearance();
+            UpdateVoiceModeAppearance();
+            UpdateShortWindowButtonsVisibility();
             UpdateTabVisibility();
         }
 
@@ -896,6 +933,174 @@ namespace GrammerV
             PositionAbovePhysicalPoint(_anchorCaretX, _anchorCaretY, _anchorCaretH, true);
         }
 
+        private void OnVoiceModeToggleClicked(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _lastActivityUtc = DateTime.UtcNow;
+            string cur = (_engine.Settings.VoiceMode ?? "cleanup").ToLowerInvariant();
+            _engine.Settings.VoiceMode = (cur == "exact") ? "cleanup" : "exact";
+            _engine.Settings.Save();
+            _engine.ApplyFullAiConfiguration();
+            UpdateVoiceModeAppearance();
+            if (_engine.Settings.VoiceMode == "cleanup")
+            {
+                _pillSummaryText.Text = "🎤 Mode: Cleanup Voice ✨";
+                _cardTimingBadge.Text = "Voice Mode: Cleanup Voice (cleans fillers/grammar without answering)";
+            }
+            else
+            {
+                _pillSummaryText.Text = "🎤 Mode: Exact Voice 🎙";
+                _cardTimingBadge.Text = "Voice Mode: Exact Voice (writes exact spoken words verbatim)";
+            }
+        }
+
+        private void UpdateVoiceModeAppearance()
+        {
+            bool isExact = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase);
+            if (_pillVoiceModeBtn != null)
+            {
+                _pillVoiceModeBtn.Content = isExact ? "Exact" : "Clean";
+                _pillVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
+                _pillVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
+            }
+            if (_cardVoiceModeBtn != null)
+            {
+                _cardVoiceModeBtn.Content = isExact ? "Voice: Exact 🎙" : "Voice: Clean ✨";
+                _cardVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
+                _cardVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
+            }
+        }
+
+        public void UpdateShortWindowButtonsVisibility()
+        {
+            if (_pillMicBtn != null)
+            {
+                _pillMicBtn.Visibility = _engine.Settings.ShowMicOnShortWindow ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (_pillVoiceModeBtn != null)
+            {
+                _pillVoiceModeBtn.Visibility = (_engine.Settings.ShowMicOnShortWindow && _engine.Settings.ShowVoiceModeOnShortWindow)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+            if (_pillReadAloudBtn != null)
+            {
+                _pillReadAloudBtn.Visibility = _engine.Settings.ShowReadAloudOnShortWindow ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private async void OnReadAloudClicked(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _lastActivityUtc = DateTime.UtcNow;
+
+            if (_isReadingAloud)
+            {
+                StopReadAloudPlayback();
+                _pillSummaryText.Text = "⏹ Stopped reading aloud";
+                _cardTimingBadge.Text = "⏹ Stopped Read Aloud playback";
+                return;
+            }
+
+            string textToRead = !string.IsNullOrEmpty(_currentOutputText) && _isExpanded
+                ? _currentOutputText
+                : _activeSourceText;
+
+            if (string.IsNullOrEmpty(textToRead) || textToRead.Trim().Length == 0)
+            {
+                CaptureTargetTextCore(true, true);
+                textToRead = _activeSourceText;
+            }
+
+            if (string.IsNullOrEmpty(textToRead) || textToRead.Trim().Length == 0)
+            {
+                _pillSummaryText.Text = "🔊 Select or type text first";
+                _cardTimingBadge.Text = "🔊 Select or type text first to read aloud";
+                return;
+            }
+
+            _isReadingAloud = true;
+            _pillReadAloudBtn.Content = "⏳";
+            _pillReadAloudBtn.Background = EmeraldDark;
+            _cardReadAloudBtn.Content = "⏳...";
+            _cardReadAloudBtn.Background = EmeraldDark;
+            _pillSummaryText.Text = "🔊 Synthesizing speech...";
+            _cardTimingBadge.Text = "🔊 Synthesizing speech audio...";
+
+            string ttsWav = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "ferdowsi_tts_" + Process.GetCurrentProcess().Id + ".wav");
+
+            try
+            {
+                ReadAloudResult rr = await _engine.ReadAloudAsync(textToRead, ttsWav);
+                if (!_isReadingAloud) return;
+
+                if (rr != null && rr.Ok && !string.IsNullOrEmpty(rr.WavPath) && System.IO.File.Exists(rr.WavPath))
+                {
+                    _pillReadAloudBtn.Content = "⏹";
+                    _pillReadAloudBtn.Background = Coral;
+                    _pillReadAloudBtn.Foreground = Brushes.White;
+                    _cardReadAloudBtn.Content = "⏹ Stop";
+                    _cardReadAloudBtn.Background = Coral;
+                    _cardReadAloudBtn.Foreground = Brushes.White;
+                    _pillSummaryText.Text = "🔊 Reading aloud...";
+                    _cardTimingBadge.Text = string.Format("🔊 {0} · {1:0.0} ms", rr.Engine, rr.ElapsedMs);
+
+                    string playPath = rr.WavPath;
+                    await System.Threading.Tasks.Task.Run(delegate
+                    {
+                        try
+                        {
+                            using (System.Media.SoundPlayer sp = new System.Media.SoundPlayer(playPath))
+                            {
+                                _ttsPlayer = sp;
+                                sp.PlaySync();
+                            }
+                        }
+                        catch { }
+                        finally
+                        {
+                            _ttsPlayer = null;
+                        }
+                    });
+                }
+                else
+                {
+                    string err = (rr != null && !string.IsNullOrEmpty(rr.Error)) ? rr.Error : "Could not synthesize speech";
+                    _pillSummaryText.Text = "🔊 " + err;
+                    _cardTimingBadge.Text = "Read Aloud: " + err;
+                }
+            }
+            finally
+            {
+                StopReadAloudPlayback();
+            }
+        }
+
+        private void StopReadAloudPlayback()
+        {
+            _isReadingAloud = false;
+            try
+            {
+                System.Media.SoundPlayer sp = _ttsPlayer;
+                if (sp != null) sp.Stop();
+            }
+            catch { }
+            if (_pillReadAloudBtn != null)
+            {
+                _pillReadAloudBtn.Content = "🔊";
+                _pillReadAloudBtn.Background = BgChip;
+                _pillReadAloudBtn.Foreground = EmeraldSoft;
+            }
+            if (_cardReadAloudBtn != null)
+            {
+                _cardReadAloudBtn.Content = "🔊 Read";
+                _cardReadAloudBtn.Background = BgChip;
+                _cardReadAloudBtn.Foreground = EmeraldSoft;
+            }
+        }
+
         private async void OnMicButtonClicked(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -904,10 +1109,10 @@ namespace GrammerV
 
             if (!_isVoiceRecording)
             {
-                if (!_engine.HasDeepgramKey)
+                if (!_engine.HasAnySttKey)
                 {
-                    _pillSummaryText.Text = "Set Deepgram API Key in ⚙";
-                    _cardTimingBadge.Text = "Add Deepgram API key in Studio Settings ⚙";
+                    _pillSummaryText.Text = "Set Groq or Deepgram Key in ⚙";
+                    _cardTimingBadge.Text = "Add Groq or Deepgram API key in Studio Settings ⚙";
                     if (_openStudioCallback != null) _openStudioCallback();
                     return;
                 }
@@ -931,8 +1136,11 @@ namespace GrammerV
                     _cardMicBtn.Content = "🔴 Stop";
                     _cardMicBtn.Background = Coral;
                     _cardMicBtn.Foreground = Brushes.White;
-                    _pillSummaryText.Text = "🎙 Listening... click 🔴 to write";
-                    _cardTimingBadge.Text = "🎙 Listening... speak now, then click 🔴 Stop";
+                    string modeTag = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase)
+                        ? "Exact Voice"
+                        : "Cleanup Voice";
+                    _pillSummaryText.Text = "🎙 Listening (" + modeTag + ")... click 🔴";
+                    _cardTimingBadge.Text = "🎙 Listening (" + modeTag + ")... speak now, then click 🔴 Stop";
                 }
                 else
                 {
@@ -950,8 +1158,8 @@ namespace GrammerV
                 _cardMicBtn.Content = "⏳...";
                 _cardMicBtn.Background = BgChip;
                 _cardMicBtn.Foreground = EmeraldSoft;
-                _pillSummaryText.Text = "⏳ Deepgram transcribing...";
-                _cardTimingBadge.Text = "⏳ Transcribing voice with Deepgram...";
+                _pillSummaryText.Text = "⏳ Transcribing voice...";
+                _cardTimingBadge.Text = "⏳ Transcribing & processing voice...";
 
                 string wavPath = System.IO.Path.Combine(
                     System.IO.Path.GetTempPath(),
@@ -999,7 +1207,7 @@ namespace GrammerV
                         {
                             string err = (vr != null && !string.IsNullOrEmpty(vr.Error)) ? vr.Error : "No speech detected";
                             _pillSummaryText.Text = "🎤 " + err;
-                            _cardTimingBadge.Text = "Deepgram: " + err;
+                            _cardTimingBadge.Text = "Voice: " + err;
                         }
                     }
                 }
@@ -1009,7 +1217,7 @@ namespace GrammerV
                     _pillMicBtn.Content = "🎤";
                     _pillMicBtn.Background = BgChip;
                     _pillMicBtn.Foreground = EmeraldSoft;
-                    _cardMicBtn.Content = "🎤 Voice";
+                    _cardMicBtn.Content = "🎤";
                     _cardMicBtn.Background = BgChip;
                     _cardMicBtn.Foreground = EmeraldSoft;
                 }

@@ -166,7 +166,7 @@ namespace FerdowsiInstaller
 
         public SetupWindow()
         {
-            Title = "FERDOWSI v1.0.0 — Setup Wizard";
+            Title = "FERDOWSI v2.0.0 — Setup Wizard";
             Width = 610;
             Height = 490;
             ResizeMode = ResizeMode.NoResize;
@@ -252,7 +252,7 @@ namespace FerdowsiInstaller
             StackPanel titleCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             titleCol.Children.Add(new TextBlock
             {
-                Text = "Install FERDOWSI (v1.0.0)",
+                Text = "Install FERDOWSI v2 (v2.0.0)",
                 Foreground = TextLight,
                 FontSize = 20,
                 FontWeight = FontWeights.Bold
@@ -477,7 +477,7 @@ namespace FerdowsiInstaller
                 }
                 catch { }
 
-                _statusText.Text = "✓ FERDOWSI v1.0.0 installed successfully to: " + targetDir;
+                _statusText.Text = "✓ FERDOWSI v2.0.0 installed successfully to: " + targetDir;
                 _statusText.Foreground = EmeraldSoft;
 
                 if (_chkLaunchNow.IsChecked == true)
@@ -489,8 +489,8 @@ namespace FerdowsiInstaller
                 }
 
                 MessageBox.Show(
-                    "FERDOWSI v1.0.0 has been installed successfully!\n\nFolder: " + targetDir + "\nHotkey: Alt + G (anywhere above your cursor)",
-                    "FERDOWSI Setup Complete",
+                    "FERDOWSI v2.0.0 has been installed successfully!\n\nFolder: " + targetDir + "\nHotkey: Alt + G (anywhere above your cursor)",
+                    "FERDOWSI v2 Setup Complete",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 Close();
@@ -541,8 +541,8 @@ namespace FerdowsiInstaller
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\FERDOWSI"))
                 {
                     if (key == null) return;
-                    key.SetValue("DisplayName", "FERDOWSI — Above-Cursor Writing Assistant & AI Dictionary");
-                    key.SetValue("DisplayVersion", "1.0.0");
+                    key.SetValue("DisplayName", "FERDOWSI v2 — Above-Cursor Writing Assistant, Voice Dictation, Read Aloud & AI Dictionary");
+                    key.SetValue("DisplayVersion", "2.0.0");
                     key.SetValue("Publisher", "https://github.com/nimamoslemy");
                     key.SetValue("URLInfoAbout", "https://github.com/nimamoslemy");
                     key.SetValue("DisplayIcon", iconPath);

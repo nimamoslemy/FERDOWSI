@@ -19,9 +19,18 @@ namespace GrammerV
         public string DeepSeekModel { get; set; }
         public string DeepgramApiKey { get; set; }
         public string DeepgramLanguage { get; set; }
+        public string GroqApiKey { get; set; }
+        public string GroqModel { get; set; }
+        public string SttProvider { get; set; } // "auto", "groq", "deepgram"
+        public string VoiceMode { get; set; } // "cleanup", "exact"
+        public string VoiceAiApiKey { get; set; }
+        public string TtsProvider { get; set; } // "auto", "gemini", "deepgram", "voice_ai", "windows_sapi"
         public string AiProvider { get; set; } // "ai_only", "auto", "google", "deepseek", "local", "offline"
         public bool FloatingEnabled { get; set; }
         public bool ShowOnTypingAndFocus { get; set; }
+        public bool ShowMicOnShortWindow { get; set; }
+        public bool ShowVoiceModeOnShortWindow { get; set; }
+        public bool ShowReadAloudOnShortWindow { get; set; }
 
         public GrammerVSettings()
         {
@@ -33,9 +42,18 @@ namespace GrammerV
             DeepSeekModel = "deepseek-chat";
             DeepgramApiKey = Environment.GetEnvironmentVariable("DEEPGRAM_API_KEY") ?? string.Empty;
             DeepgramLanguage = "multi";
+            GroqApiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? string.Empty;
+            GroqModel = "whisper-large-v3-turbo";
+            SttProvider = "auto";
+            VoiceMode = "cleanup";
+            VoiceAiApiKey = Environment.GetEnvironmentVariable("VOICE_AI_API_KEY") ?? string.Empty;
+            TtsProvider = "auto";
             AiProvider = "auto";
             FloatingEnabled = true;
             ShowOnTypingAndFocus = true;
+            ShowMicOnShortWindow = true;
+            ShowVoiceModeOnShortWindow = true;
+            ShowReadAloudOnShortWindow = true;
         }
 
         private static string NormalizeModelName(string mdl)
@@ -81,6 +99,10 @@ namespace GrammerV
                             loaded.GoogleModel = NormalizeModelName(loaded.GoogleModel);
                             if (string.IsNullOrEmpty(loaded.DeepSeekModel)) loaded.DeepSeekModel = "deepseek-chat";
                             if (string.IsNullOrEmpty(loaded.DeepgramLanguage)) loaded.DeepgramLanguage = "multi";
+                            if (string.IsNullOrEmpty(loaded.GroqModel)) loaded.GroqModel = "whisper-large-v3-turbo";
+                            if (string.IsNullOrEmpty(loaded.SttProvider)) loaded.SttProvider = "auto";
+                            if (string.IsNullOrEmpty(loaded.VoiceMode)) loaded.VoiceMode = "cleanup";
+                            if (string.IsNullOrEmpty(loaded.TtsProvider)) loaded.TtsProvider = "auto";
                             if (string.IsNullOrEmpty(loaded.AiProvider)) loaded.AiProvider = "auto";
                             if (string.IsNullOrEmpty(loaded.GoogleApiKey))
                             {
@@ -95,6 +117,14 @@ namespace GrammerV
                             if (string.IsNullOrEmpty(loaded.DeepgramApiKey))
                             {
                                 loaded.DeepgramApiKey = Environment.GetEnvironmentVariable("DEEPGRAM_API_KEY") ?? string.Empty;
+                            }
+                            if (string.IsNullOrEmpty(loaded.GroqApiKey))
+                            {
+                                loaded.GroqApiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? string.Empty;
+                            }
+                            if (string.IsNullOrEmpty(loaded.VoiceAiApiKey))
+                            {
+                                loaded.VoiceAiApiKey = Environment.GetEnvironmentVariable("VOICE_AI_API_KEY") ?? string.Empty;
                             }
                             if (i > 0 && !File.Exists(primaryPath))
                             {
@@ -131,6 +161,17 @@ namespace GrammerV
     {
         public bool Ok;
         public string Transcript;
+        public string RawTranscript;
+        public string VoiceMode;
+        public string Engine;
+        public string Error;
+        public double ElapsedMs;
+    }
+
+    public class ReadAloudResult
+    {
+        public bool Ok;
+        public string WavPath;
         public string Engine;
         public string Error;
         public double ElapsedMs;
@@ -273,6 +314,21 @@ namespace GrammerV
         public bool HasDeepgramKey
         {
             get { return !string.IsNullOrEmpty(Settings.DeepgramApiKey) && Settings.DeepgramApiKey.Trim().Length > 5; }
+        }
+
+        public bool HasGroqKey
+        {
+            get { return !string.IsNullOrEmpty(Settings.GroqApiKey) && Settings.GroqApiKey.Trim().Length > 5; }
+        }
+
+        public bool HasAnySttKey
+        {
+            get { return HasDeepgramKey || HasGroqKey; }
+        }
+
+        public bool HasVoiceAiKey
+        {
+            get { return !string.IsNullOrEmpty(Settings.VoiceAiApiKey) && Settings.VoiceAiApiKey.Trim().Length > 5; }
         }
 
         public bool HasAnyCloudAiKey
@@ -446,6 +502,12 @@ namespace GrammerV
             cfg["deepseek_model"] = Settings.DeepSeekModel ?? "deepseek-chat";
             cfg["deepgram_api_key"] = Settings.DeepgramApiKey ?? string.Empty;
             cfg["deepgram_language"] = Settings.DeepgramLanguage ?? "multi";
+            cfg["groq_api_key"] = Settings.GroqApiKey ?? string.Empty;
+            cfg["groq_model"] = Settings.GroqModel ?? "whisper-large-v3-turbo";
+            cfg["stt_provider"] = Settings.SttProvider ?? "auto";
+            cfg["voice_mode"] = Settings.VoiceMode ?? "cleanup";
+            cfg["voice_ai_api_key"] = Settings.VoiceAiApiKey ?? string.Empty;
+            cfg["tts_provider"] = Settings.TtsProvider ?? "auto";
             cfg["ai_provider"] = Settings.AiProvider ?? "auto";
             SendRaw(cfg);
         }
@@ -562,13 +624,49 @@ namespace GrammerV
             });
         }
 
+        public Task<GoogleTestResult> TestGroqApiAsync(string apiKey)
+        {
+            return Task.Run(delegate
+            {
+                GoogleTestResult res = new GoogleTestResult();
+                res.Model = "whisper-large-v3-turbo";
+                if (!IsPythonConnected)
+                {
+                    res.Ok = false;
+                    res.Error = "Python NLP engine is not running.";
+                    return res;
+                }
+                Dictionary<string, object> req = new Dictionary<string, object>();
+                req["action"] = "test_groq";
+                req["groq_api_key"] = (apiKey ?? string.Empty).Trim();
+                Dictionary<string, object> resp = SendRaw(req);
+                if (resp == null)
+                {
+                    res.Ok = false;
+                    res.Error = "No response from Python engine.";
+                    return res;
+                }
+                res.Ok = GetBool(resp, "ok");
+                res.ElapsedMs = GetDouble(resp, "elapsed_ms", 0);
+                if (res.Ok)
+                {
+                    res.SampleOutput = GetString(resp, "sample_output", "Groq Whisper Dictation ready!");
+                }
+                else
+                {
+                    res.Error = GetString(resp, "error", "Groq API test failed");
+                }
+                return res;
+            });
+        }
+
         public Task<VoiceTranscribeResult> TranscribeAudioAsync(string wavPath)
         {
             return Task.Run(delegate
             {
                 VoiceTranscribeResult vr = new VoiceTranscribeResult();
                 vr.Transcript = string.Empty;
-                vr.Engine = "Deepgram Voice";
+                vr.Engine = "Voice Dictation";
                 if (!IsPythonConnected)
                 {
                     vr.Ok = false;
@@ -580,6 +678,9 @@ namespace GrammerV
                 req["wav_path"] = wavPath ?? string.Empty;
                 req["deepgram_api_key"] = Settings.DeepgramApiKey ?? string.Empty;
                 req["deepgram_language"] = Settings.DeepgramLanguage ?? "multi";
+                req["groq_api_key"] = Settings.GroqApiKey ?? string.Empty;
+                req["stt_provider"] = Settings.SttProvider ?? "auto";
+                req["voice_mode"] = Settings.VoiceMode ?? "cleanup";
                 Dictionary<string, object> resp = SendRaw(req);
                 if (resp == null)
                 {
@@ -589,10 +690,49 @@ namespace GrammerV
                 }
                 vr.Ok = GetBool(resp, "ok");
                 vr.Transcript = GetString(resp, "transcript", string.Empty);
-                vr.Engine = GetString(resp, "engine", "Deepgram Voice");
+                vr.RawTranscript = GetString(resp, "raw_transcript", vr.Transcript);
+                vr.VoiceMode = GetString(resp, "voice_mode", Settings.VoiceMode ?? "cleanup");
+                vr.Engine = GetString(resp, "engine", "Voice Dictation");
                 vr.Error = GetString(resp, "error", string.Empty);
                 vr.ElapsedMs = GetDouble(resp, "elapsed_ms", 0);
                 return vr;
+            });
+        }
+
+        public Task<ReadAloudResult> ReadAloudAsync(string text, string outWavPath)
+        {
+            return Task.Run(delegate
+            {
+                ReadAloudResult rr = new ReadAloudResult();
+                rr.WavPath = outWavPath ?? string.Empty;
+                rr.Engine = "Read Aloud";
+                if (!IsPythonConnected)
+                {
+                    rr.Ok = false;
+                    rr.Error = "Python engine is not running.";
+                    return rr;
+                }
+                Dictionary<string, object> req = new Dictionary<string, object>();
+                req["action"] = "read_aloud";
+                req["text"] = text ?? string.Empty;
+                req["out_wav_path"] = outWavPath ?? string.Empty;
+                req["tts_provider"] = Settings.TtsProvider ?? "auto";
+                req["google_api_key"] = Settings.GoogleApiKey ?? string.Empty;
+                req["deepgram_api_key"] = Settings.DeepgramApiKey ?? string.Empty;
+                req["voice_ai_api_key"] = Settings.VoiceAiApiKey ?? string.Empty;
+                Dictionary<string, object> resp = SendRaw(req);
+                if (resp == null)
+                {
+                    rr.Ok = false;
+                    rr.Error = "No response from Read Aloud engine.";
+                    return rr;
+                }
+                rr.Ok = GetBool(resp, "ok");
+                rr.WavPath = GetString(resp, "wav_path", outWavPath);
+                rr.Engine = GetString(resp, "engine", "Read Aloud");
+                rr.Error = GetString(resp, "error", string.Empty);
+                rr.ElapsedMs = GetDouble(resp, "elapsed_ms", 0);
+                return rr;
             });
         }
 

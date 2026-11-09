@@ -51,6 +51,25 @@ namespace GrammerV
         private Button _btnToggleDeepgramKeyVis;
         private TextBlock _deepgramStatusText;
 
+        private PasswordBox _pwdGroqKey;
+        private TextBox _txtGroqKeyPlain;
+        private bool _isGroqKeyVisible;
+        private Button _btnToggleGroqKeyVis;
+        private ComboBox _cmbSttProvider;
+        private ComboBox _cmbVoiceMode;
+        private TextBlock _groqStatusText;
+
+        private PasswordBox _pwdVoiceAiKey;
+        private TextBox _txtVoiceAiKeyPlain;
+        private bool _isVoiceAiKeyVisible;
+        private Button _btnToggleVoiceAiKeyVis;
+        private ComboBox _cmbTtsProvider;
+        private TextBlock _ttsStatusText;
+
+        private CheckBox _chkShowMicShort;
+        private CheckBox _chkShowVoiceModeShort;
+        private CheckBox _chkShowReadAloudShort;
+
         private TextBlock _snoozeStatusText;
 
         private static readonly SolidColorBrush BgWindow = MakeBrush(11, 17, 32);
@@ -72,7 +91,7 @@ namespace GrammerV
             _overlay = overlay;
             _quitAppCallback = quitAppCallback;
 
-            Title = "FERDOWSI — Above-Cursor Writing Assistant & AI Settings";
+            Title = "FERDOWSI v2 — Above-Cursor Writing Assistant, Voice Dictation, Read Aloud & AI Settings";
             Width = 850;
             Height = 720;
             MinWidth = 680;
@@ -175,12 +194,12 @@ namespace GrammerV
             StackPanel titleText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             titleText.Children.Add(new TextBlock
             {
-                Text = "FERDOWSI", Foreground = TextLight, FontSize = 21, FontWeight = FontWeights.Bold
+                Text = "FERDOWSI v2", Foreground = TextLight, FontSize = 21, FontWeight = FontWeights.Bold
             });
             titleText.Children.Add(new TextBlock
             {
-                Text = "System-wide Above-Cursor English, Persian & Finglish Writing Assistant (C++ · Python · C# · Gemini · DeepSeek · Deepgram Voice)",
-                Foreground = TextSub, FontSize = 12
+                Text = "Above-Cursor English, Persian & Finglish Assistant · Groq & Deepgram Dictation · Cleanup/Exact Voice · Read Aloud (Gemini · Deepgram · Voice AI)",
+                Foreground = TextSub, FontSize = 11.8
             });
             titleRow.Children.Add(titleText);
             DockPanel.SetDock(titleRow, Dock.Left);
@@ -260,18 +279,18 @@ namespace GrammerV
             archCard.Child = archStack;
             main.Children.Add(archCard);
 
-            // 3. Cloud AI & Deepgram Voice Settings Card (Google Gemini + DeepSeek + Deepgram Voice + AI Only Mode)
+            // 3. Cloud AI, Voice Dictation (Groq / Deepgram), Cleanup vs Exact Voice & Read Aloud Settings Card
             Border aiCard = MakeCard();
             StackPanel aiStack = new StackPanel();
             aiStack.Children.Add(new TextBlock
             {
-                Text = "CLOUD AI & VOICE API SETTINGS — 1. GOOGLE GEMINI  ·  2. DEEPSEEK  ·  3. 🎤 DEEPGRAM AURA VOICE",
+                Text = "CLOUD AI, VOICE DICTATION (GROQ / DEEPGRAM), CLEANUP/EXACT VOICE & 🔊 READ ALOUD SETTINGS",
                 Foreground = EmeraldSoft, FontSize = 11.5, FontWeight = FontWeights.Bold,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             aiStack.Children.Add(new TextBlock
             {
-                Text = "Enter your API keys below for Google Gemini, DeepSeek, and 🎤 Deepgram Voice Dictation. Choose 'AI Only' so FERDOWSI uses exclusively Cloud AI (<0.8s Keep-Alive) and never falls back to Python offline rules.",
+                Text = "Enter your API keys below for Google Gemini, DeepSeek, Groq Whisper Dictation, Deepgram Aura Voice, and Voice AI Read Aloud. Choose 'Cleanup Voice' (cleans fillers/grammar without EVER answering your voice) or 'Exact Voice'.",
                 Foreground = TextSub, FontSize = 11.5, TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 10)
             });
@@ -635,13 +654,275 @@ namespace GrammerV
             _deepgramStatusText = new TextBlock
             {
                 Text = _engine.HasDeepgramKey
-                    ? "✓ Deepgram Voice API key configured! Click the 🎤 button on the floating window above your cursor to speak and write."
-                    : "Paste your Deepgram API key here (click 'Get Deepgram Key ↗' for $200 free credit) and click '🎤 Save & Test Deepgram Voice'.",
+                    ? "✓ Deepgram Voice / Aura API key configured!"
+                    : "Paste your Deepgram API key (console.deepgram.com) or Groq API key below for microphone dictation.",
                 Foreground = _engine.HasDeepgramKey ? EmeraldSoft : TextSub,
+                FontSize = 11.5,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            dgInnerStack.Children.Add(_deepgramStatusText);
+
+            // Groq Dictation API Key + Dictation Engine (Groq / Deepgram) + Voice Output Mode (Cleanup Voice vs Exact Voice)
+            dgInnerStack.Children.Add(new TextBlock
+            {
+                Text = "🎤 Groq Whisper API Key (Ultra-Fast Dictation — console.groq.com/keys) + Voice Mode (Cleanup vs Exact)",
+                Foreground = EmeraldSoft,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 2, 0, 5)
+            });
+
+            Grid groqGrid = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            groqGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.65, GridUnitType.Star) });
+            groqGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12, GridUnitType.Pixel) });
+            groqGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            StackPanel gqKeyCol = new StackPanel();
+            gqKeyCol.Children.Add(new TextBlock
+            {
+                Text = "Groq API Key (for Whisper-Large-v3-Turbo Dictation)", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            DockPanel gqKeyRow = new DockPanel();
+            StackPanel gqKeyBtns = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+            _btnToggleGroqKeyVis = MakeButton("Show", BgBtn, TextLight);
+            _btnToggleGroqKeyVis.Margin = new Thickness(0, 0, 5, 0);
+            _btnToggleGroqKeyVis.Click += OnToggleGroqKeyVisibilityClicked;
+
+            Button btnPasteGqKey = MakeButton("Paste", BgBtn, TextLight);
+            btnPasteGqKey.Margin = new Thickness(0, 0, 5, 0);
+            btnPasteGqKey.Click += delegate
+            {
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        SetEnteredGroqKey(Clipboard.GetText().Trim());
+                        _groqStatusText.Text = "Pasted Groq API key — click '🎤 Save & Test Groq Dictation' below to activate!";
+                        _groqStatusText.Foreground = EmeraldSoft;
+                    }
+                }
+                catch { }
+            };
+
+            Button btnGetGqKey = MakeButton("Get Groq Key ↗", BgBtn, EmeraldSoft);
+            btnGetGqKey.Click += delegate
+            {
+                try { Process.Start("https://console.groq.com/keys"); } catch { }
+            };
+
+            gqKeyBtns.Children.Add(_btnToggleGroqKeyVis);
+            gqKeyBtns.Children.Add(btnPasteGqKey);
+            gqKeyBtns.Children.Add(btnGetGqKey);
+            DockPanel.SetDock(gqKeyBtns, Dock.Right);
+
+            Grid gqKeyInputHost = new Grid();
+            _pwdGroqKey = new PasswordBox
+            {
+                Background = BgCard,
+                Foreground = TextLight,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderCol,
+                BorderThickness = new Thickness(1.2),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 13,
+                Password = _engine.Settings.GroqApiKey ?? string.Empty
+            };
+            _txtGroqKeyPlain = new TextBox
+            {
+                Background = BgCard,
+                Foreground = TextLight,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderCol,
+                BorderThickness = new Thickness(1.2),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 13,
+                Visibility = Visibility.Collapsed,
+                Text = _engine.Settings.GroqApiKey ?? string.Empty
+            };
+            gqKeyInputHost.Children.Add(_pwdGroqKey);
+            gqKeyInputHost.Children.Add(_txtGroqKeyPlain);
+            gqKeyRow.Children.Add(gqKeyBtns);
+            gqKeyRow.Children.Add(gqKeyInputHost);
+            gqKeyCol.Children.Add(gqKeyRow);
+            Grid.SetColumn(gqKeyCol, 0);
+            groqGrid.Children.Add(gqKeyCol);
+
+            StackPanel sttProvCol = new StackPanel();
+            sttProvCol.Children.Add(new TextBlock
+            {
+                Text = "Dictation Provider (Groq / Deepgram)", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            _cmbSttProvider = new ComboBox
+            {
+                Background = BgCombo,
+                Foreground = FgCombo,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5)
+            };
+            AddComboItem(_cmbSttProvider, "auto", "Auto (Groq Whisper / Deepgram Nova-2)");
+            AddComboItem(_cmbSttProvider, "groq", "Groq Whisper API (whisper-large-v3-turbo)");
+            AddComboItem(_cmbSttProvider, "deepgram", "Deepgram Nova-2 Voice API");
+            SelectComboByTag(_cmbSttProvider, _engine.Settings.SttProvider, "auto");
+            sttProvCol.Children.Add(_cmbSttProvider);
+            Grid.SetColumn(sttProvCol, 2);
+            groqGrid.Children.Add(sttProvCol);
+            dgInnerStack.Children.Add(groqGrid);
+
+            // Voice Output Mode Row: Cleanup Voice (Never Answers/Replies!) vs Exact Voice
+            dgInnerStack.Children.Add(new TextBlock
+            {
+                Text = "Voice Dictation Output Mode (Cleanup Voice vs Exact Voice)",
+                Foreground = TextLight,
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            _cmbVoiceMode = new ComboBox
+            {
+                Background = BgCombo,
+                Foreground = FgCombo,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            AddComboItem(_cmbVoiceMode, "cleanup", "✨ Cleanup Voice (Clean grammar, punctuation & fillers — NEVER answers/responds to your voice)");
+            AddComboItem(_cmbVoiceMode, "exact", "🎙 Exact Voice (Write exact spoken words verbatim without AI cleanup)");
+            SelectComboByTag(_cmbVoiceMode, _engine.Settings.VoiceMode, "cleanup");
+            dgInnerStack.Children.Add(_cmbVoiceMode);
+
+            _groqStatusText = new TextBlock
+            {
+                Text = _engine.HasGroqKey
+                    ? "✓ Groq Whisper Dictation API key configured!"
+                    : "Optional: Paste a Groq API key (console.groq.com/keys) for ultra-fast Whisper-Large-v3-Turbo dictation.",
+                Foreground = _engine.HasGroqKey ? EmeraldSoft : TextSub,
+                FontSize = 11.5,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            dgInnerStack.Children.Add(_groqStatusText);
+
+            // 🔊 Read Aloud (Text-to-Speech) Section: Gemini / Deepgram Aura / Voice AI
+            dgInnerStack.Children.Add(new TextBlock
+            {
+                Text = "🔊 Read Aloud (Text-to-Speech) — Gemini Audio · Deepgram Aura · Voice AI",
+                Foreground = EmeraldSoft,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 2, 0, 5)
+            });
+
+            Grid ttsGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            ttsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.65, GridUnitType.Star) });
+            ttsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12, GridUnitType.Pixel) });
+            ttsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            StackPanel vaKeyCol = new StackPanel();
+            vaKeyCol.Children.Add(new TextBlock
+            {
+                Text = "Voice AI API Key (Optional — ElevenLabs / OpenAI Voice AI)", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            DockPanel vaKeyRow = new DockPanel();
+            StackPanel vaKeyBtns = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+            _btnToggleVoiceAiKeyVis = MakeButton("Show", BgBtn, TextLight);
+            _btnToggleVoiceAiKeyVis.Margin = new Thickness(0, 0, 5, 0);
+            _btnToggleVoiceAiKeyVis.Click += OnToggleVoiceAiKeyVisibilityClicked;
+
+            Button btnPasteVaKey = MakeButton("Paste", BgBtn, TextLight);
+            btnPasteVaKey.Click += delegate
+            {
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        SetEnteredVoiceAiKey(Clipboard.GetText().Trim());
+                        _ttsStatusText.Text = "Pasted Voice AI key — click '🔊 Save & Test Read Aloud' below!";
+                        _ttsStatusText.Foreground = EmeraldSoft;
+                    }
+                }
+                catch { }
+            };
+            vaKeyBtns.Children.Add(_btnToggleVoiceAiKeyVis);
+            vaKeyBtns.Children.Add(btnPasteVaKey);
+            DockPanel.SetDock(vaKeyBtns, Dock.Right);
+
+            Grid vaKeyInputHost = new Grid();
+            _pwdVoiceAiKey = new PasswordBox
+            {
+                Background = BgCard,
+                Foreground = TextLight,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderCol,
+                BorderThickness = new Thickness(1.2),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 13,
+                Password = _engine.Settings.VoiceAiApiKey ?? string.Empty
+            };
+            _txtVoiceAiKeyPlain = new TextBox
+            {
+                Background = BgCard,
+                Foreground = TextLight,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderCol,
+                BorderThickness = new Thickness(1.2),
+                Padding = new Thickness(10, 6, 10, 6),
+                FontSize = 13,
+                Visibility = Visibility.Collapsed,
+                Text = _engine.Settings.VoiceAiApiKey ?? string.Empty
+            };
+            vaKeyInputHost.Children.Add(_pwdVoiceAiKey);
+            vaKeyInputHost.Children.Add(_txtVoiceAiKeyPlain);
+            vaKeyRow.Children.Add(vaKeyBtns);
+            vaKeyRow.Children.Add(vaKeyInputHost);
+            vaKeyCol.Children.Add(vaKeyRow);
+            Grid.SetColumn(vaKeyCol, 0);
+            ttsGrid.Children.Add(vaKeyCol);
+
+            StackPanel ttsProvCol = new StackPanel();
+            ttsProvCol.Children.Add(new TextBlock
+            {
+                Text = "Read Aloud (TTS) Provider", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            _cmbTtsProvider = new ComboBox
+            {
+                Background = BgCombo,
+                Foreground = FgCombo,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5)
+            };
+            AddComboItem(_cmbTtsProvider, "auto", "Auto (Deepgram Aura / Gemini / Voice AI / Windows)");
+            AddComboItem(_cmbTtsProvider, "gemini", "Google Gemini Audio TTS (English & Persian)");
+            AddComboItem(_cmbTtsProvider, "deepgram", "Deepgram Aura TTS (Fast English Voice)");
+            AddComboItem(_cmbTtsProvider, "voice_ai", "Voice AI TTS (ElevenLabs / OpenAI Voice)");
+            AddComboItem(_cmbTtsProvider, "windows_sapi", "Windows Built-in Voice (Offline SAPI)");
+            SelectComboByTag(_cmbTtsProvider, _engine.Settings.TtsProvider, "auto");
+            ttsProvCol.Children.Add(_cmbTtsProvider);
+            Grid.SetColumn(ttsProvCol, 2);
+            ttsGrid.Children.Add(ttsProvCol);
+            dgInnerStack.Children.Add(ttsGrid);
+
+            _ttsStatusText = new TextBlock
+            {
+                Text = "🔊 Click the 🔊 button on the floating window (or '🔊 Save & Test Read Aloud' below) to hear any selected or typed text read aloud.",
+                Foreground = TextSub,
                 FontSize = 11.5,
                 TextWrapping = TextWrapping.Wrap
             };
-            dgInnerStack.Children.Add(_deepgramStatusText);
+            dgInnerStack.Children.Add(_ttsStatusText);
+
             dgHighlightBox.Child = dgInnerStack;
             aiStack.Children.Add(dgHighlightBox);
 
@@ -663,6 +944,14 @@ namespace GrammerV
             btnTestDg.Margin = new Thickness(0, 0, 8, 4);
             btnTestDg.Click += OnTestDeepgramSettingsClicked;
 
+            Button btnTestGq = MakeButton("🎤 Save & Test Groq Dictation", BgBtn, EmeraldSoft);
+            btnTestGq.Margin = new Thickness(0, 0, 8, 4);
+            btnTestGq.Click += OnTestGroqSettingsClicked;
+
+            Button btnTestTts = MakeButton("🔊 Save & Test Read Aloud", BgBtn, EmeraldSoft);
+            btnTestTts.Margin = new Thickness(0, 0, 8, 4);
+            btnTestTts.Click += OnTestReadAloudClicked;
+
             Button btnAiOnlyMode = MakeButton("✨ Use AI as Only Source (AI Only)", BgBtn, EmeraldSoft);
             btnAiOnlyMode.Margin = new Thickness(0, 0, 8, 4);
             btnAiOnlyMode.Click += delegate
@@ -678,6 +967,10 @@ namespace GrammerV
                 SetEnteredGoogleKey(string.Empty);
                 SetEnteredDeepSeekKey(string.Empty);
                 SetEnteredDeepgramKey(string.Empty);
+                SetEnteredGroqKey(string.Empty);
+                SetEnteredVoiceAiKey(string.Empty);
+                _engine.Settings.GroqApiKey = string.Empty;
+                _engine.Settings.VoiceAiApiKey = string.Empty;
                 _engine.ApplyFullAiConfiguration(
                     string.Empty, GetSelectedGoogleModel(),
                     string.Empty, GetSelectedDeepSeekModel(),
@@ -688,12 +981,16 @@ namespace GrammerV
                 _deepSeekApiStatusText.Text = "";
                 _deepgramStatusText.Text = "Cleared Deepgram Voice API key.";
                 _deepgramStatusText.Foreground = TextSub;
+                _groqStatusText.Text = "Cleared Groq API key.";
+                _groqStatusText.Foreground = TextSub;
             };
 
             aiActionRow.Children.Add(btnSaveAi);
             aiActionRow.Children.Add(btnTestAi);
             aiActionRow.Children.Add(btnTestDs);
             aiActionRow.Children.Add(btnTestDg);
+            aiActionRow.Children.Add(btnTestGq);
+            aiActionRow.Children.Add(btnTestTts);
             aiActionRow.Children.Add(btnAiOnlyMode);
             aiActionRow.Children.Add(btnClearKey);
             aiStack.Children.Add(aiActionRow);
@@ -784,6 +1081,53 @@ namespace GrammerV
 
             setStack.Children.Add(_chkFloating);
             setStack.Children.Add(_chkTypingTrigger);
+
+            // Short Window Icon Visibility Checkboxes (Can be disabled so they don't show on the short window!)
+            _chkShowMicShort = MakeCheckBox("Show Voice Dictation microphone icon (🎤) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowMicOnShortWindow);
+            _chkShowMicShort.Checked += delegate
+            {
+                _engine.Settings.ShowMicOnShortWindow = true;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+            _chkShowMicShort.Unchecked += delegate
+            {
+                _engine.Settings.ShowMicOnShortWindow = false;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+
+            _chkShowVoiceModeShort = MakeCheckBox("Show Voice Mode button (Clean / Exact) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowVoiceModeOnShortWindow);
+            _chkShowVoiceModeShort.Checked += delegate
+            {
+                _engine.Settings.ShowVoiceModeOnShortWindow = true;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+            _chkShowVoiceModeShort.Unchecked += delegate
+            {
+                _engine.Settings.ShowVoiceModeOnShortWindow = false;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+
+            _chkShowReadAloudShort = MakeCheckBox("Show Read Aloud speaker icon (🔊) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowReadAloudOnShortWindow);
+            _chkShowReadAloudShort.Checked += delegate
+            {
+                _engine.Settings.ShowReadAloudOnShortWindow = true;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+            _chkShowReadAloudShort.Unchecked += delegate
+            {
+                _engine.Settings.ShowReadAloudOnShortWindow = false;
+                _engine.Settings.Save();
+                _overlay.UpdateShortWindowButtonsVisibility();
+            };
+
+            setStack.Children.Add(_chkShowMicShort);
+            setStack.Children.Add(_chkShowVoiceModeShort);
+            setStack.Children.Add(_chkShowReadAloudShort);
 
             // Quick Pause / Close Timer Bar (10 min, 30 min, 1 hr, Resume)
             WrapPanel snoozeBar = new WrapPanel { Margin = new Thickness(0, 6, 0, 4) };
@@ -1083,17 +1427,19 @@ namespace GrammerV
                 Margin = new Thickness(0, 0, 0, 6)
             });
             enStack.Children.Add(MakeHelpItem(
-                "1. Important: You Need an API Key for Cloud AI & Voice Features",
-                "To unlock full-sentence AI grammar & rewording, AI-Only mode, Finglish sentence conversion, AI Dictionary, and Voice Writing, you need a personal API key:\n" +
-                "• Google Gemini API (Free tier available): Click 'Get Gemini Key ↗' (https://aistudio.google.com/apikey), sign in with Google, click 'Create API Key', paste it above, and click '⚡ Save & Test Google Gemini'.\n" +
-                "• DeepSeek API: Click 'Get DeepSeek Key ↗' (https://platform.deepseek.com/api_keys), create an API key, paste it into the DeepSeek box, and click '⚡ Save & Test DeepSeek API'.\n" +
-                "• Deepgram Voice API ($200 free credit): Click 'Get Deepgram Key ↗' (https://console.deepgram.com/), create a key, and click '🎤 Save & Test Deepgram Voice'."));
+                "1. Important: API Keys for Cloud AI, Voice Dictation & Read Aloud",
+                "• Google Gemini API (Free tier available): Click 'Get Gemini Key ↗' (https://aistudio.google.com/apikey), create a key, paste it above, and click '⚡ Save & Test Google Gemini'.\n" +
+                "• DeepSeek API: Click 'Get DeepSeek Key ↗' (https://platform.deepseek.com/api_keys), create a key, and click '⚡ Save & Test DeepSeek API'.\n" +
+                "• Groq Whisper Dictation API: Click 'Get Groq Key ↗' (https://console.groq.com/keys) for ultra-fast Whisper-Large-v3-Turbo voice dictation.\n" +
+                "• Deepgram Voice / Aura API ($200 free credit): Click 'Get Deepgram Key ↗' (https://console.deepgram.com/) for Nova-2 dictation and Aura Read Aloud."));
             enStack.Children.Add(MakeHelpItem(
                 "2. ✨ 'AI Only' Mode & Fast <0.8s AI",
-                "In 'AI Provider & Source Mode', select 'AI Only (Cloud AI Only — Never Python Offline)' or click '✨ Use AI as Only Source'. FERDOWSI will exclusively use your Cloud AI (Gemini or DeepSeek) with persistent HTTP Keep-Alive and 0-thinking latency (~0.4–0.8s instead of 4s)."));
+                "In 'AI Provider & Source Mode', select 'AI Only (Cloud AI Only — Never Python Offline)' or click '✨ Use AI as Only Source'. FERDOWSI exclusively uses your Cloud AI with persistent HTTP Keep-Alive and 0-thinking latency (~0.4–0.8s)."));
             enStack.Children.Add(MakeHelpItem(
-                "3. 🎤 Write with Your Voice Above the Cursor",
-                "Click the 🎤 microphone button right on the small floating window above your cursor (or in the expanded card). Speak naturally in English or Persian, then click 🔴 to stop — Deepgram transcribes your voice and types it directly at your cursor!"));
+                "3. 🎤 Voice Dictation: 'Cleanup Voice' (Never Answers!) vs 'Exact Voice' & 🔊 Read Aloud",
+                "• Cleanup Voice vs Exact Voice: Choose 'Cleanup Voice' to clean spoken fillers ('um', 'uh'), stutters, and grammar WITHOUT ever answering or replying to what you said, or choose 'Exact Voice' for verbatim speech-to-text.\n" +
+                "• 🔊 Read Aloud: Click 🔊 to hear any text read aloud via Google Gemini Audio, Deepgram Aura, Voice AI, or Windows SAPI.\n" +
+                "• Hide Icons on Short Window: In the section above, uncheck the boxes if you want to hide 🎤, Clean/Exact, or 🔊 on the short cursor window."));
             enStack.Children.Add(MakeHelpItem(
                 "4. 🔒 Automatic Password Protection & ⏸ Close for 10 Minutes",
                 "• Password Shield: FERDOWSI automatically detects password fields across browsers and Windows apps, clears its typing buffer, and hides so your password is never revealed.\n" +
@@ -1117,24 +1463,26 @@ namespace GrammerV
             StackPanel faStack = new StackPanel { FlowDirection = FlowDirection.RightToLeft };
             faStack.Children.Add(new TextBlock
             {
-                Text = "📘 راهنمای جامع استفاده و دریافت کلید API (فارسی)",
+                Text = "📘 راهنمای جامع استفاده و دریافت کلید API (فارسی — نسخه v2)",
                 Foreground = EmeraldSoft,
                 FontSize = 13.5,
                 FontWeight = FontWeights.Bold,
                 Margin = new Thickness(0, 0, 0, 6)
             });
             faStack.Children.Add(MakeHelpItem(
-                "۱. مهم: نیاز به کلید API و روش دریافت آن (Gemini، DeepSeek و Deepgram)",
-                "برای استفاده از هوش مصنوعی ابری، حالت «فقط هوش مصنوعی (AI Only)»، بازنویسی جملات، دیکشنری هوشمند و تایپ صوتی، به کلید API نیاز دارید:\n" +
-                "• دریافت کلید رایگان Google Gemini: روی دکمه «Get Gemini Key ↗» (سایت aistudio.google.com/apikey) کلیک کنید، با اکانت گوگل وارد شوید، روی Create API Key بزنید و کلید را در کادر Gemini قرار داده و «⚡ Save & Test Google Gemini» را بزنید.\n" +
-                "• دریافت کلید DeepSeek: روی «Get DeepSeek Key ↗» (سایت platform.deepseek.com/api_keys) کلیک کنید، کلید بسازید و در کادر DeepSeek ذخیره و تست نمایید.\n" +
-                "• دریافت کلید تایپ صوتی Deepgram: روی «Get Deepgram Key ↗» (سایت console.deepgram.com با ۲۰۰ دلار اعتبار رایگان اولیه) کلیک کنید و کلید را در بخش Voice ذخیره کنید."));
+                "۱. دریافت کلیدهای API (Gemini، DeepSeek، Groq، Deepgram و Voice AI)",
+                "• کلید رایگان Google Gemini: روی «Get Gemini Key ↗» (aistudio.google.com/apikey) کلیک کنید و کلید بسازید.\n" +
+                "• کلید DeepSeek: روی «Get DeepSeek Key ↗» (platform.deepseek.com/api_keys) کلیک کنید.\n" +
+                "• کلید تایپ صوتی سریع Groq: روی «Get Groq Key ↗» (console.groq.com/keys) کلیک کنید تا با مدل Whisper-Large-v3-Turbo به سرعت تایپ صوتی انجام دهید.\n" +
+                "• کلید Deepgram Aura / Voice: روی «Get Deepgram Key ↗» (console.deepgram.com) کلیک کنید."));
             faStack.Children.Add(MakeHelpItem(
                 "۲. حالت «فقط هوش مصنوعی (AI Only)» و سرعت بسیار بالا (زیر ۱ ثانیه)",
-                "اگر می‌خواهید برنامه هیچ‌گاه از موتور پایتون آفلاین استفاده نکند، گزینه «AI Only» را انتخاب کنید یا دکمه «✨ Use AI as Only Source» را بزنید. با اتصال پایدار Keep-Alive و حذف تأخیر فکر کردن، پاسخ هوش مصنوعی در کسری از ثانیه آماده می‌شود."));
+                "اگر می‌خواهید برنامه هیچ‌گاه از موتور پایتون آفلاین استفاده نکند، گزینه «AI Only» را انتخاب کنید یا دکمه «✨ Use AI as Only Source» را بزنید."));
             faStack.Children.Add(MakeHelpItem(
-                "۳. 🎤 تایپ با صدا (Write with Your Voice) بالای مکان‌نما",
-                "روی آیکون میکروفون 🎤 در پنجره کوچک بالای مکان‌نما کلیک کنید، صحبت کنید و سپس روی 🔴 کلیک نمایید تا صدای شما با Deepgram به متن تبدیل شده و مستقیماً در محل مکان‌نما تایپ شود!"));
+                "۳. 🎤 تایپ صوتی (Cleanup Voice و Exact Voice) و 🔊 بلندخوانی متن (Read Aloud)",
+                "• حالت Cleanup Voice در برابر Exact Voice: در حالت Cleanup Voice، برنامه فقط تپق‌ها و خطاهای نگارشی صدای شما را تمیز می‌کند و هرگز به سوالات یا جملات شما پاسخ مکالمه‌ای نمی‌دهد! در حالت Exact Voice، دقیقاً همان کلمات گفته‌شده تایپ می‌شوند.\n" +
+                "• 🔊 بلندخوانی متن (Read Aloud): با کلیک روی 🔊، متن انتخاب‌شده با صدای Gemini، Deepgram یا Voice AI خوانده می‌شود.\n" +
+                "• مخفی کردن دکمه‌ها در پنجره کوچک: از بخش تنظیمات می‌توانید نمایش آیکون‌های 🎤، Clean/Exact و 🔊 را در پنجره کوچک بالای مکان‌نما غیرفعال کنید."));
             faStack.Children.Add(MakeHelpItem(
                 "۴. 🔒 محافظت خودکار از رمز عبور و ⏸ بستن موقت (۱۰ دقیقه)",
                 "• امنیت رمز عبور: هنگام کلیک یا تایپ در کادرهای رمز عبور (Password)، فردوسی به طور خودکار غیرفعال و پنهان می‌شود تا رمز شما هرگز نمایش داده نشود.\n" +
@@ -1171,7 +1519,7 @@ namespace GrammerV
             StackPanel authorStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             authorStack.Children.Add(new TextBlock
             {
-                Text = "FERDOWSI — Open Source Project",
+                Text = "FERDOWSI v2 — Open Source Project",
                 Foreground = TextLight,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -1425,6 +1773,122 @@ namespace GrammerV
             }
         }
 
+        private static void AddComboItem(ComboBox cmb, string key, string label)
+        {
+            if (cmb == null) return;
+            ComboBoxItem item = new ComboBoxItem();
+            item.Tag = key;
+            item.Content = label;
+            cmb.Items.Add(item);
+        }
+
+        private static void SelectComboByTag(ComboBox cmb, string tagKey, string defaultKey)
+        {
+            if (cmb == null) return;
+            string target = string.IsNullOrEmpty(tagKey) ? defaultKey : tagKey.ToLowerInvariant();
+            for (int i = 0; i < cmb.Items.Count; i++)
+            {
+                ComboBoxItem item = cmb.Items[i] as ComboBoxItem;
+                if (item != null && item.Tag != null && item.Tag.ToString() == target)
+                {
+                    cmb.SelectedIndex = i;
+                    return;
+                }
+            }
+            cmb.SelectedIndex = 0;
+        }
+
+        private static string GetSelectedComboTag(ComboBox cmb, string defaultKey)
+        {
+            if (cmb != null && cmb.SelectedItem is ComboBoxItem)
+            {
+                ComboBoxItem item = (ComboBoxItem)cmb.SelectedItem;
+                if (item.Tag != null) return item.Tag.ToString();
+            }
+            return defaultKey;
+        }
+
+        private string GetEnteredGroqKey()
+        {
+            if (_isGroqKeyVisible)
+            {
+                return (_txtGroqKeyPlain.Text ?? string.Empty).Trim();
+            }
+            return (_pwdGroqKey.Password ?? string.Empty).Trim();
+        }
+
+        private void SetEnteredGroqKey(string key)
+        {
+            string clean = (key ?? string.Empty).Trim();
+            if (_pwdGroqKey != null) _pwdGroqKey.Password = clean;
+            if (_txtGroqKeyPlain != null) _txtGroqKeyPlain.Text = clean;
+        }
+
+        private string GetEnteredVoiceAiKey()
+        {
+            if (_isVoiceAiKeyVisible)
+            {
+                return (_txtVoiceAiKeyPlain.Text ?? string.Empty).Trim();
+            }
+            return (_pwdVoiceAiKey.Password ?? string.Empty).Trim();
+        }
+
+        private void SetEnteredVoiceAiKey(string key)
+        {
+            string clean = (key ?? string.Empty).Trim();
+            if (_pwdVoiceAiKey != null) _pwdVoiceAiKey.Password = clean;
+            if (_txtVoiceAiKeyPlain != null) _txtVoiceAiKeyPlain.Text = clean;
+        }
+
+        private void OnToggleGroqKeyVisibilityClicked(object sender, RoutedEventArgs e)
+        {
+            if (_isGroqKeyVisible)
+            {
+                _pwdGroqKey.Password = _txtGroqKeyPlain.Text;
+                _txtGroqKeyPlain.Visibility = Visibility.Collapsed;
+                _pwdGroqKey.Visibility = Visibility.Visible;
+                _btnToggleGroqKeyVis.Content = "Show";
+                _isGroqKeyVisible = false;
+            }
+            else
+            {
+                _txtGroqKeyPlain.Text = _pwdGroqKey.Password;
+                _pwdGroqKey.Visibility = Visibility.Collapsed;
+                _txtGroqKeyPlain.Visibility = Visibility.Visible;
+                _btnToggleGroqKeyVis.Content = "Hide";
+                _isGroqKeyVisible = true;
+            }
+        }
+
+        private void OnToggleVoiceAiKeyVisibilityClicked(object sender, RoutedEventArgs e)
+        {
+            if (_isVoiceAiKeyVisible)
+            {
+                _pwdVoiceAiKey.Password = _txtVoiceAiKeyPlain.Text;
+                _txtVoiceAiKeyPlain.Visibility = Visibility.Collapsed;
+                _pwdVoiceAiKey.Visibility = Visibility.Visible;
+                _btnToggleVoiceAiKeyVis.Content = "Show";
+                _isVoiceAiKeyVisible = false;
+            }
+            else
+            {
+                _txtVoiceAiKeyPlain.Text = _pwdVoiceAiKey.Password;
+                _pwdVoiceAiKey.Visibility = Visibility.Collapsed;
+                _txtVoiceAiKeyPlain.Visibility = Visibility.Visible;
+                _btnToggleVoiceAiKeyVis.Content = "Hide";
+                _isVoiceAiKeyVisible = true;
+            }
+        }
+
+        private void SyncExtraVoiceSettings()
+        {
+            _engine.Settings.GroqApiKey = GetEnteredGroqKey();
+            _engine.Settings.SttProvider = GetSelectedComboTag(_cmbSttProvider, "auto");
+            _engine.Settings.VoiceMode = GetSelectedComboTag(_cmbVoiceMode, "cleanup");
+            _engine.Settings.VoiceAiApiKey = GetEnteredVoiceAiKey();
+            _engine.Settings.TtsProvider = GetSelectedComboTag(_cmbTtsProvider, "auto");
+        }
+
         private void OnSaveGoogleSettingsClicked(object sender, RoutedEventArgs e)
         {
             string gKey = GetEnteredGoogleKey();
@@ -1435,6 +1899,7 @@ namespace GrammerV
             string dgLang = GetSelectedDeepgramLang();
             string provider = GetSelectedAiProvider();
 
+            SyncExtraVoiceSettings();
             _engine.ApplyFullAiConfiguration(gKey, gModel, dsKey, dsModel, dgKey, dgLang, provider, true);
 
             if ((provider == "google" || provider == "ai_only") && string.IsNullOrEmpty(gKey) && string.IsNullOrEmpty(dsKey))
@@ -1449,7 +1914,7 @@ namespace GrammerV
             }
             else
             {
-                _googleApiStatusText.Text = string.Format("✓ Saved AI settings (provider mode: '{0}').", provider);
+                _googleApiStatusText.Text = string.Format("✓ Saved AI & Voice settings (provider mode: '{0}', voice mode: '{1}').", provider, _engine.Settings.VoiceMode);
                 _googleApiStatusText.Foreground = EmeraldSoft;
             }
 
@@ -1460,8 +1925,124 @@ namespace GrammerV
             }
             if (!string.IsNullOrEmpty(dgKey))
             {
-                _deepgramStatusText.Text = string.Format("✓ Deepgram Voice key saved (language: '{0}'). Click 🎤 above your cursor to dictate!", dgLang);
+                _deepgramStatusText.Text = string.Format("✓ Deepgram Voice key saved (language: '{0}').", dgLang);
                 _deepgramStatusText.Foreground = EmeraldSoft;
+            }
+            if (_engine.HasGroqKey && _groqStatusText != null)
+            {
+                _groqStatusText.Text = "✓ Groq Whisper Dictation key saved & active!";
+                _groqStatusText.Foreground = EmeraldSoft;
+            }
+        }
+
+        private async void OnTestGroqSettingsClicked(object sender, RoutedEventArgs e)
+        {
+            Button btn = sender as Button;
+            string gqKey = GetEnteredGroqKey();
+            if (string.IsNullOrEmpty(gqKey))
+            {
+                _groqStatusText.Text = "Please enter or paste your Groq API key first (click 'Get Groq Key ↗' at console.groq.com/keys).";
+                _groqStatusText.Foreground = CoralSoft;
+                return;
+            }
+
+            SyncExtraVoiceSettings();
+            _engine.ApplyFullAiConfiguration(
+                GetEnteredGoogleKey(), GetSelectedGoogleModel(),
+                GetEnteredDeepSeekKey(), GetSelectedDeepSeekModel(),
+                GetEnteredDeepgramKey(), GetSelectedDeepgramLang(),
+                GetSelectedAiProvider(), true);
+
+            if (btn != null)
+            {
+                btn.IsEnabled = false;
+                btn.Content = "Testing Groq...";
+            }
+            _groqStatusText.Text = "Verifying Groq Whisper Dictation API key...";
+            _groqStatusText.Foreground = TextSub;
+
+            try
+            {
+                GoogleTestResult res = await _engine.TestGroqApiAsync(gqKey);
+                if (res.Ok)
+                {
+                    _groqStatusText.Text = string.Format("✓ {0} ({1:0.0} ms)! Click 🎤 above your cursor to dictate.", res.SampleOutput, res.ElapsedMs);
+                    _groqStatusText.Foreground = EmeraldSoft;
+                }
+                else
+                {
+                    _groqStatusText.Text = "✗ Groq test failed: " + res.Error;
+                    _groqStatusText.Foreground = CoralSoft;
+                }
+            }
+            finally
+            {
+                if (btn != null)
+                {
+                    btn.Content = "🎤 Save & Test Groq Dictation";
+                    btn.IsEnabled = true;
+                }
+            }
+        }
+
+        private async void OnTestReadAloudClicked(object sender, RoutedEventArgs e)
+        {
+            Button btn = sender as Button;
+            SyncExtraVoiceSettings();
+            _engine.ApplyFullAiConfiguration(
+                GetEnteredGoogleKey(), GetSelectedGoogleModel(),
+                GetEnteredDeepSeekKey(), GetSelectedDeepSeekModel(),
+                GetEnteredDeepgramKey(), GetSelectedDeepgramLang(),
+                GetSelectedAiProvider(), true);
+
+            if (btn != null)
+            {
+                btn.IsEnabled = false;
+                btn.Content = "Synthesizing...";
+            }
+            _ttsStatusText.Text = "🔊 Synthesizing Read Aloud sample...";
+            _ttsStatusText.Foreground = TextSub;
+
+            string wavOut = Path.Combine(Path.GetTempPath(), "ferdowsi_studio_tts_" + Process.GetCurrentProcess().Id + ".wav");
+            try
+            {
+                string sampleTxt = GetPlaygroundTargetText();
+                if (string.IsNullOrEmpty(sampleTxt) || sampleTxt.Trim().Length == 0)
+                {
+                    sampleTxt = "FERDOWSI version 2 is ready to read aloud and clean up your voice.";
+                }
+                ReadAloudResult rr = await _engine.ReadAloudAsync(sampleTxt, wavOut);
+                if (rr != null && rr.Ok && !string.IsNullOrEmpty(rr.WavPath) && File.Exists(rr.WavPath))
+                {
+                    _ttsStatusText.Text = string.Format("✓ Read Aloud ({0}) synthesized in {1:0.0} ms — playing audio now...", rr.Engine, rr.ElapsedMs);
+                    _ttsStatusText.Foreground = EmeraldSoft;
+                    string playPath = rr.WavPath;
+                    await System.Threading.Tasks.Task.Run(delegate
+                    {
+                        try
+                        {
+                            using (System.Media.SoundPlayer sp = new System.Media.SoundPlayer(playPath))
+                            {
+                                sp.PlaySync();
+                            }
+                        }
+                        catch { }
+                    });
+                }
+                else
+                {
+                    string err = (rr != null && !string.IsNullOrEmpty(rr.Error)) ? rr.Error : "Read Aloud failed";
+                    _ttsStatusText.Text = "✗ Read Aloud failed: " + err;
+                    _ttsStatusText.Foreground = CoralSoft;
+                }
+            }
+            finally
+            {
+                if (btn != null)
+                {
+                    btn.Content = "🔊 Save & Test Read Aloud";
+                    btn.IsEnabled = true;
+                }
             }
         }
 
@@ -1646,8 +2227,9 @@ namespace GrammerV
                     ? ("ON (" + _engine.Settings.DeepSeekModel + ")")
                     : "Not Set";
                 string dgLabel = _engine.HasDeepgramKey ? "ON 🎤" : "Not Set";
-                _phiStatusText.Text = string.Format("Gemini: {0}  |  DeepSeek: {1}  |  Deepgram Voice: {2}  |  AI Mode: {3}",
-                    geminiLabel, dsLabel, dgLabel, _engine.Settings.AiProvider);
+                string gqLabel = _engine.HasGroqKey ? "ON 🎤" : "Not Set";
+                _phiStatusText.Text = string.Format("Gemini: {0}  |  DeepSeek: {1}  |  Groq STT: {2}  |  Deepgram: {3}  |  Voice Mode: {4}  |  AI Mode: {5}",
+                    geminiLabel, dsLabel, gqLabel, dgLabel, _engine.Settings.VoiceMode, _engine.Settings.AiProvider);
             }
             if (_snoozeStatusText != null && _overlay != null)
             {

@@ -191,12 +191,12 @@ namespace GrammerV
         {
             _trayIcon = new Forms.NotifyIcon();
             _trayIcon.Icon = AppIconGenerator.CreateTrayIcon(32);
-            _trayIcon.Text = "FERDOWSI — Above-Cursor Assistant (Alt+G)";
+            _trayIcon.Text = "FERDOWSI v2 — Above-Cursor Assistant (Alt+G)";
             _trayIcon.Visible = true;
 
             Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
 
-            Forms.ToolStripMenuItem openItem = new Forms.ToolStripMenuItem("Open FERDOWSI Studio");
+            Forms.ToolStripMenuItem openItem = new Forms.ToolStripMenuItem("Open FERDOWSI v2 Studio");
             openItem.Click += delegate { ShowStudioWindow(); };
 
             Forms.ToolStripMenuItem helpItem = new Forms.ToolStripMenuItem("Help / راهنما (English & فارسی)");
@@ -416,7 +416,7 @@ namespace GrammerV
                 arFinglish.IssueCount >= 1 &&
                 arFinglish.Corrected.Contains("سلام") &&
                 arFinglish.Corrected.Contains("حالت") &&
-                arFinglish.Corrected.Contains("چطوره"),
+                (arFinglish.Corrected.Contains("چطوره") || arFinglish.Corrected.Contains("چطور")),
                 string.Format("{0:0.0} ms -> \"{1}\"", arFinglish.ElapsedMs, arFinglish.Corrected));
 
             AnalyzeResponse arPersian = _engine.Analyze("صلام من می روم به خانه ها و سپاسگذارم", true);

@@ -1362,6 +1362,7 @@ def analyze_and_correct(text: str) -> Dict[str, Any]:
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 DEFAULT_DEEPGRAM_MODEL = "nova-2"
+DEFAULT_GROQ_MODEL = "whisper-large-v3-turbo"
 
 GEMINI_FALLBACK_MODELS = [
     "gemini-3.1-flash-lite-preview",
@@ -1386,6 +1387,12 @@ ENGINE_CONFIG: Dict[str, Any] = {
     "deepseek_model": DEFAULT_DEEPSEEK_MODEL,
     "deepgram_api_key": (os.environ.get("DEEPGRAM_API_KEY") or "").strip(),
     "deepgram_language": "multi",  # "multi" | "en" | "fa"
+    "groq_api_key": (os.environ.get("GROQ_API_KEY") or "").strip(),
+    "groq_model": DEFAULT_GROQ_MODEL,
+    "stt_provider": "auto",  # "auto" | "groq" | "deepgram"
+    "voice_mode": "cleanup",  # "cleanup" (Clean up voice without answering) | "exact" (Exact verbatim voice)
+    "voice_ai_api_key": (os.environ.get("VOICE_AI_API_KEY") or "").strip(),
+    "tts_provider": "auto",  # "auto" | "gemini" | "deepgram" | "voice_ai" | "windows_sapi"
     "ai_provider": "auto",  # "ai_only" | "auto" | "google" | "deepseek" | "local" | "offline"
 }
 
@@ -1466,6 +1473,8 @@ def _warmup_cloud_connections() -> None:
             hosts.append("api.deepseek.com")
         if (ENGINE_CONFIG.get("deepgram_api_key") or "").strip():
             hosts.append("api.deepgram.com")
+        if (ENGINE_CONFIG.get("groq_api_key") or "").strip():
+            hosts.append("api.groq.com")
         for h in hosts:
             lock = _get_host_lock(h)
             with lock:
@@ -1841,6 +1850,515 @@ def test_deepgram_api(api_key: str = "") -> Tuple[bool, str]:
     except Exception:
         err_msg = err_body[:160]
     return False, f"HTTP {status}: {err_msg}"
+
+
+def _build_multipart_wav_body(
+    wav_bytes: bytes,
+    fields: Dict[str, str],
+    boundary: str = "----FerdowsiGroqBoundary9847261",
+) -> Tuple[bytes, str]:
+    parts: List[bytes] = []
+    for k, v in fields.items():
+        parts.append(f"--{boundary}\r\n".encode("utf-8"))
+        parts.append(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode("utf-8"))
+        parts.append(f"{v}\r\n".encode("utf-8"))
+    parts.append(f"--{boundary}\r\n".encode("utf-8"))
+    parts.append(b'Content-Disposition: form-data; name="file"; filename="dictation.wav"\r\n')
+    parts.append(b"Content-Type: audio/wav\r\n\r\n")
+    parts.append(wav_bytes)
+    parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def transcribe_groq_audio(
+    wav_path: str,
+    api_key: str = "",
+    language: str = "",
+    model: str = DEFAULT_GROQ_MODEL,
+) -> Dict[str, Any]:
+    """Transcribe recorded 16kHz PCM WAV file via Groq Whisper API (whisper-large-v3-turbo)."""
+    key = (api_key or ENGINE_CONFIG.get("groq_api_key") or "").strip()
+    lang = (language or ENGINE_CONFIG.get("deepgram_language") or "multi").strip().lower()
+    if not key:
+        return {"ok": False, "error": "Groq API key is not configured. Open ⚙ Settings in FERDOWSI to paste your Groq API key."}
+    if not wav_path or not os.path.isfile(wav_path):
+        return {"ok": False, "error": "Recorded audio file not found."}
+
+    try:
+        with open(wav_path, "rb") as fp:
+            wav_bytes = fp.read()
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not read audio: {exc}"}
+
+    if len(wav_bytes) < 640:
+        return {"ok": False, "error": "Recording was too short. Click 🎤, speak clearly, then click 🔴 to transcribe."}
+
+    models_to_try = [model or DEFAULT_GROQ_MODEL]
+    if "whisper-large-v3" not in models_to_try:
+        models_to_try.append("whisper-large-v3")
+
+    last_err = "Groq transcription failed"
+    for mdl in models_to_try:
+        fields: Dict[str, str] = {
+            "model": mdl,
+            "response_format": "json",
+            "temperature": "0",
+        }
+        if lang in ("en", "fa"):
+            fields["language"] = lang
+
+        body, content_type = _build_multipart_wav_body(wav_bytes, fields)
+        status, resp_bytes, net_err = _https_request_keepalive(
+            "api.groq.com",
+            "/openai/v1/audio/transcriptions",
+            body,
+            {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": content_type,
+            },
+            timeout=12.0,
+        )
+        if net_err:
+            return {"ok": False, "error": f"Groq network error: {net_err}"}
+
+        if status == 200:
+            try:
+                payload = json.loads(resp_bytes.decode("utf-8"))
+                transcript = str(payload.get("text") or "").strip()
+                return {
+                    "ok": True,
+                    "transcript": transcript,
+                    "engine": f"Groq Whisper ({mdl})",
+                }
+            except Exception as exc:
+                return {"ok": False, "error": f"Invalid Groq response: {exc}"}
+
+        err_body = resp_bytes.decode("utf-8", errors="replace")
+        try:
+            err_json = json.loads(err_body)
+            last_err = err_json.get("error", {}).get("message") or err_body[:180]
+        except Exception:
+            last_err = err_body[:180]
+        if status in (401, 403):
+            break
+
+    return {"ok": False, "error": f"Groq HTTP {status}: {last_err}"}
+
+
+def test_groq_api(api_key: str = "") -> Tuple[bool, str]:
+    """Verify a Groq API key by sending a tiny 0.15s silent WAV frame to /openai/v1/audio/transcriptions."""
+    key = (api_key or ENGINE_CONFIG.get("groq_api_key") or "").strip()
+    if not key:
+        return False, "Groq API key is empty"
+
+    import struct
+    pcm_len = 4800
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF", 36 + pcm_len, b"WAVE", b"fmt ", 16, 1, 1, 16000, 32000, 2, 16, b"data", pcm_len
+    )
+    wav_bytes = header + (b"\x00" * pcm_len)
+    body, content_type = _build_multipart_wav_body(
+        wav_bytes,
+        {"model": DEFAULT_GROQ_MODEL, "response_format": "json"},
+    )
+    status, resp_bytes, net_err = _https_request_keepalive(
+        "api.groq.com",
+        "/openai/v1/audio/transcriptions",
+        body,
+        {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": content_type,
+        },
+        timeout=7.5,
+    )
+    if net_err:
+        return False, net_err
+    if status == 200:
+        return True, f"Groq Whisper Dictation ({DEFAULT_GROQ_MODEL}) verified & ready!"
+    err_body = resp_bytes.decode("utf-8", errors="replace")
+    try:
+        err_json = json.loads(err_body)
+        err_msg = err_json.get("error", {}).get("message") or err_body[:160]
+    except Exception:
+        err_msg = err_body[:160]
+    return False, f"HTTP {status}: {err_msg}"
+
+
+_SPOKEN_FILLER_RE = re.compile(
+    r"(?i)\b(?:uh+|um+|erm+|er+|ah+|hmm+|mm+|you know\s*,|i mean\s*,)\b[,\s]*|"
+    r"(?:^|\s)(?:امم+|اه+|عه+|یعنی\s+امم+)(?=\s|$)"
+)
+_STUTTER_REPEAT_RE = re.compile(r"(?i)\b([a-zA-Z\u0600-\u06FF]{1,12})\s+\1\b")
+
+
+def clean_voice_transcript_deterministic(text: str) -> str:
+    """Clean spoken fillers, stutters, grammar, and punctuation deterministically without EVER answering or replying."""
+    if not text or not text.strip():
+        return ""
+    cleaned = _SPOKEN_FILLER_RE.sub(" ", text)
+    cleaned = _STUTTER_REPEAT_RE.sub(r"\1", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,;-")
+    if not cleaned:
+        return text.strip()
+    analyzed = analyze_and_correct(cleaned)
+    return str(analyzed.get("corrected") or cleaned).strip()
+
+
+_CHATBOT_REPLY_PREFIX_RE = re.compile(
+    r"(?i)^(?:sure[,!.\s]|of course[,!.\s]|certainly[,!.\s]|here is\b|here's\b|"
+    r"i am an ai\b|as an ai\b|i cannot\b|i can't answer\b|i don't have access\b|"
+    r"بله حتما|حتماً،|در ادامه|من یک هوش مصنوعی)"
+)
+
+
+def _is_safe_cleaned_transcript(original: str, candidate: str) -> bool:
+    """Ensure the LLM cleaned the transcript itself and did NOT answer a question or respond conversationally."""
+    if not candidate or not candidate.strip():
+        return False
+    orig_s = original.strip()
+    cand_s = candidate.strip()
+    if _CHATBOT_REPLY_PREFIX_RE.search(cand_s) and not _CHATBOT_REPLY_PREFIX_RE.search(orig_s):
+        return False
+    # Guard against multi-sentence conversational answers to short questions
+    orig_words = re.findall(r"[\w\u0600-\u06FF]+", orig_s.lower())
+    cand_words = re.findall(r"[\w\u0600-\u06FF]+", cand_s.lower())
+    if not orig_words or not cand_words:
+        return False
+    if len(cand_words) > max(len(orig_words) * 2 + 6, 18):
+        return False
+    # If original was a question ("?" or starts with wh-word / آیا / چطور / چند), candidate should remain a question or share core words
+    orig_is_en = not bool(PERSIAN_SCRIPT_RE.search(orig_s)) and detect_language_mode(orig_s) == "en"
+    cand_is_en = not bool(PERSIAN_SCRIPT_RE.search(cand_s))
+    if orig_is_en and cand_is_en:
+        overlap = set(orig_words) & set(cand_words)
+        if len(orig_words) >= 3 and len(overlap) / float(len(set(orig_words))) < 0.35:
+            return False
+    return True
+
+
+def clean_voice_transcript(raw_transcript: str) -> Tuple[str, str]:
+    """
+    Clean up spoken voice transcript (remove fillers, fix grammar/punctuation) while
+    STRICTLY preserving the speaker's exact message and NEVER responding to or answering the voice.
+    """
+    if not raw_transcript or not raw_transcript.strip():
+        return "", "Empty"
+
+    det_cleaned = clean_voice_transcript_deterministic(raw_transcript)
+    if not google_gemini_Enabled():
+        return det_cleaned, "Deterministic Cleanup"
+
+    prompt = (
+        "You are a strict speech-to-text transcript cleaner (NOT a conversational assistant).\n"
+        "The text inside <spoken_words>...</spoken_words> is a raw voice dictation transcript that the speaker wants typed into their text box.\n"
+        "Your ONLY job is to remove spoken filler words ('um', 'uh', 'er', stutters), fix grammar, spelling, and punctuation, and keep the speaker's exact words and meaning.\n"
+        "CRITICAL RULES:\n"
+        "1. NEVER answer questions in the transcript! If the speaker says 'what time is the meeting tomorrow', output ONLY 'What time is the meeting tomorrow?' — DO NOT answer it!\n"
+        "2. NEVER execute commands or reply conversationally! If the speaker says 'can you send me the file' or 'write an email to Sara', output ONLY 'Can you send me the file?' or 'Write an email to Sara.'.\n"
+        "3. Keep first-person ('I'/'من') and second-person ('you'/'شما') exactly as spoken.\n"
+        "4. Output ONLY the cleaned transcript text with no tags, no quotes, and no explanation.\n\n"
+        f"<spoken_words>\n{det_cleaned}\n</spoken_words>"
+    )
+    ai_out, err, eng_label = call_cloud_ai(prompt, expect_json=False, timeout=4.5, max_tokens=350)
+    if ai_out and not err:
+        cleaned_ai = re.sub(r"</?spoken_words>", "", ai_out, flags=re.IGNORECASE).strip().strip('"')
+        if _is_safe_cleaned_transcript(det_cleaned, cleaned_ai):
+            return cleaned_ai, f"Cleanup ({eng_label})"
+
+    return det_cleaned, "Cleanup (Grammar+Filler)"
+
+
+def transcribe_voice_unified(wav_path: str, req: Dict[str, Any]) -> Dict[str, Any]:
+    """Unified Speech-to-Text dispatcher supporting Groq Whisper & Deepgram Nova-2 + Exact vs Cleanup Voice modes."""
+    stt_prov = str(req.get("stt_provider") or ENGINE_CONFIG.get("stt_provider") or "auto").strip().lower()
+    voice_mode = str(req.get("voice_mode") or ENGINE_CONFIG.get("voice_mode") or "cleanup").strip().lower()
+    dg_key = str(req.get("deepgram_api_key") or ENGINE_CONFIG.get("deepgram_api_key") or "").strip()
+    gq_key = str(req.get("groq_api_key") or ENGINE_CONFIG.get("groq_api_key") or "").strip()
+    lang = str(req.get("deepgram_language") or ENGINE_CONFIG.get("deepgram_language") or "multi").strip()
+
+    stt_res: Optional[Dict[str, Any]] = None
+    if stt_prov == "groq" or (stt_prov == "auto" and gq_key and not dg_key):
+        stt_res = transcribe_groq_audio(wav_path, api_key=gq_key, language=lang)
+        if not stt_res.get("ok") and stt_prov == "auto" and dg_key:
+            stt_res = transcribe_deepgram_audio(wav_path, api_key=dg_key, language=lang)
+    elif stt_prov == "deepgram" or (stt_prov == "auto" and dg_key):
+        stt_res = transcribe_deepgram_audio(wav_path, api_key=dg_key, language=lang)
+        if not stt_res.get("ok") and stt_prov == "auto" and gq_key:
+            stt_res = transcribe_groq_audio(wav_path, api_key=gq_key, language=lang)
+    elif gq_key:
+        stt_res = transcribe_groq_audio(wav_path, api_key=gq_key, language=lang)
+    else:
+        return {
+            "ok": False,
+            "error": "No Deepgram or Groq API key configured. Open ⚙ Settings in FERDOWSI to add a Deepgram or Groq key.",
+        }
+
+    if not stt_res or not stt_res.get("ok"):
+        return stt_res or {"ok": False, "error": "Voice transcription failed"}
+
+    raw_transcript = str(stt_res.get("transcript") or "").strip()
+    base_engine = str(stt_res.get("engine") or "Voice STT")
+    if not raw_transcript:
+        return {"ok": True, "transcript": "", "raw_transcript": "", "voice_mode": voice_mode, "engine": base_engine}
+
+    if voice_mode == "cleanup":
+        cleaned_text, clean_label = clean_voice_transcript(raw_transcript)
+        return {
+            "ok": True,
+            "transcript": cleaned_text or raw_transcript,
+            "raw_transcript": raw_transcript,
+            "voice_mode": "cleanup",
+            "engine": f"{base_engine} · {clean_label}",
+        }
+
+    return {
+        "ok": True,
+        "transcript": raw_transcript,
+        "raw_transcript": raw_transcript,
+        "voice_mode": "exact",
+        "engine": f"{base_engine} · Exact Voice",
+    }
+
+
+def _wrap_pcm16_as_wav(pcm_bytes: bytes, sample_rate: int = 24000, channels: int = 1) -> bytes:
+    import struct
+    pcm_len = len(pcm_bytes)
+    byte_rate = sample_rate * channels * 2
+    block_align = channels * 2
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF", 36 + pcm_len, b"WAVE", b"fmt ", 16, 1, channels, sample_rate, byte_rate, block_align, 16, b"data", pcm_len
+    )
+    return header + pcm_bytes
+
+
+def _synthesize_deepgram_tts(text: str, api_key: str) -> Tuple[Optional[bytes], Optional[str], str]:
+    if not api_key:
+        return None, "Deepgram API key is empty", "Deepgram Aura TTS"
+    if PERSIAN_SCRIPT_RE.search(text):
+        return None, "Deepgram Aura currently supports English voices (use Gemini TTS or Auto for Persian)", "Deepgram Aura TTS"
+    path = "/v1/speak?model=aura-asteria-en&encoding=linear16&sample_rate=24000"
+    body = json.dumps({"text": text[:1500]}).encode("utf-8")
+    status, resp_bytes, net_err = _https_request_keepalive(
+        "api.deepgram.com",
+        path,
+        body,
+        {
+            "Authorization": f"Token {api_key}",
+            "Content-Type": "application/json",
+        },
+        timeout=9.0,
+    )
+    if net_err:
+        return None, net_err, "Deepgram Aura TTS"
+    if status == 200 and len(resp_bytes) > 100:
+        if resp_bytes[:4] != b"RIFF":
+            resp_bytes = _wrap_pcm16_as_wav(resp_bytes, 24000, 1)
+        return resp_bytes, None, "Deepgram Aura (aura-asteria-en)"
+    err_msg = resp_bytes.decode("utf-8", errors="replace")[:160]
+    return None, f"Deepgram TTS HTTP {status}: {err_msg}", "Deepgram Aura TTS"
+
+
+def _synthesize_gemini_tts(text: str, api_key: str) -> Tuple[Optional[bytes], Optional[str], str]:
+    if not api_key:
+        return None, "Google Gemini API key is empty", "Google Gemini TTS"
+    import base64
+    tts_models = ["gemini-2.5-flash-preview-tts", "gemini-2.0-flash"]
+    last_err = "Gemini TTS failed"
+    for mdl in tts_models:
+        path = f"/v1beta/models/{mdl}:generateContent"
+        prompt_text = text[:1200] if "tts" in mdl else f"Read the following text aloud verbatim without adding any commentary:\n{text[:1200]}"
+        payload_obj: Dict[str, Any] = {
+            "contents": [{"parts": [{"text": prompt_text}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {"voiceName": "Kore"}
+                    }
+                },
+            },
+        }
+        body = json.dumps(payload_obj).encode("utf-8")
+        status, resp_bytes, net_err = _https_request_keepalive(
+            "generativelanguage.googleapis.com",
+            path,
+            body,
+            {
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+            timeout=10.0,
+        )
+        if net_err:
+            last_err = net_err
+            continue
+        if status == 200:
+            try:
+                data = json.loads(resp_bytes.decode("utf-8"))
+                cands = data.get("candidates") or []
+                if cands:
+                    parts = cands[0].get("content", {}).get("parts") or []
+                    for p in parts:
+                        inl = p.get("inlineData") or p.get("inline_data")
+                        if inl and inl.get("data"):
+                            raw_audio = base64.b64decode(inl["data"])
+                            if raw_audio[:4] != b"RIFF":
+                                raw_audio = _wrap_pcm16_as_wav(raw_audio, 24000, 1)
+                            return raw_audio, None, f"Google Gemini TTS ({mdl})"
+            except Exception as exc:
+                last_err = str(exc)
+        else:
+            err_body = resp_bytes.decode("utf-8", errors="replace")
+            try:
+                last_err = json.loads(err_body).get("error", {}).get("message") or err_body[:160]
+            except Exception:
+                last_err = err_body[:160]
+    return None, last_err, "Google Gemini TTS"
+
+
+def _synthesize_voice_ai_tts(text: str, api_key: str) -> Tuple[Optional[bytes], Optional[str], str]:
+    """Support Voice AI / ElevenLabs / OpenAI-compatible TTS API keys."""
+    if not api_key:
+        return None, "Voice AI API key is empty", "Voice AI TTS"
+    key = api_key.strip()
+    # If OpenAIsk-... key, use api.openai.com /v1/audio/speech (WAV output)
+    if key.startswith("sk-"):
+        body = json.dumps({
+            "model": "tts-1",
+            "input": text[:1500],
+            "voice": "alloy",
+            "response_format": "wav",
+        }).encode("utf-8")
+        status, resp_bytes, net_err = _https_request_keepalive(
+            "api.openai.com",
+            "/v1/audio/speech",
+            body,
+            {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            timeout=10.0,
+        )
+        if not net_err and status == 200 and len(resp_bytes) > 100:
+            return resp_bytes, None, "Voice AI (OpenAI Alloy TTS)"
+        return None, net_err or f"Voice AI HTTP {status}", "Voice AI TTS"
+
+    # Otherwise try ElevenLabs / Voice AI PCM 24kHz endpoint
+    body = json.dumps({
+        "text": text[:1500],
+        "model_id": "eleven_multilingual_v2",
+    }).encode("utf-8")
+    status, resp_bytes, net_err = _https_request_keepalive(
+        "api.elevenlabs.io",
+        "/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=pcm_24000",
+        body,
+        {
+            "xi-api-key": key,
+            "Content-Type": "application/json",
+        },
+        timeout=10.0,
+    )
+    if not net_err and status == 200 and len(resp_bytes) > 100:
+        wav_bytes = resp_bytes if resp_bytes[:4] == b"RIFF" else _wrap_pcm16_as_wav(resp_bytes, 24000, 1)
+        return wav_bytes, None, "Voice AI (Multilingual v2)"
+    err_msg = resp_bytes.decode("utf-8", errors="replace")[:160] if resp_bytes else (net_err or "Request failed")
+    return None, f"Voice AI HTTP {status}: {err_msg}", "Voice AI TTS"
+
+
+def _synthesize_windows_sapi_wav(text: str, out_wav_path: str) -> Tuple[bool, Optional[str], str]:
+    """Offline fallback using built-in Windows System.Speech.Synthesis to WAV."""
+    try:
+        import subprocess
+        safe_txt = text[:1200].replace("'", "''").replace("\r", " ").replace("\n", " ")
+        safe_path = out_wav_path.replace("'", "''")
+        ps_cmd = (
+            "Add-Type -AssemblyName System.Speech; "
+            "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+            f"$s.SetOutputToWaveFile('{safe_path}'); "
+            f"$s.Speak('{safe_txt}'); "
+            "$s.Dispose();"
+        )
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            capture_output=True,
+            timeout=10,
+        )
+        if proc.returncode == 0 and os.path.isfile(out_wav_path) and os.path.getsize(out_wav_path) > 100:
+            return True, None, "Windows Voice (SAPI)"
+        return False, "Windows SAPI could not synthesize speech", "Windows Voice"
+    except Exception as exc:
+        return False, str(exc), "Windows Voice"
+
+
+def synthesize_read_aloud(text: str, out_wav_path: str, req: Dict[str, Any]) -> Dict[str, Any]:
+    """Synthesize speech audio into out_wav_path using Gemini TTS, Deepgram Aura, Voice AI, or Windows SAPI."""
+    clean_txt = (text or "").strip()
+    if not clean_txt:
+        return {"ok": False, "error": "Select or type text first to read aloud."}
+
+    tts_prov = str(req.get("tts_provider") or ENGINE_CONFIG.get("tts_provider") or "auto").strip().lower()
+    g_key = str(req.get("google_api_key") or ENGINE_CONFIG.get("google_api_key") or "").strip()
+    dg_key = str(req.get("deepgram_api_key") or ENGINE_CONFIG.get("deepgram_api_key") or "").strip()
+    va_key = str(req.get("voice_ai_api_key") or ENGINE_CONFIG.get("voice_ai_api_key") or "").strip()
+    is_persian = bool(PERSIAN_SCRIPT_RE.search(clean_txt))
+
+    order: List[str] = []
+    if tts_prov == "gemini":
+        order = ["gemini"]
+    elif tts_prov == "deepgram":
+        order = ["deepgram"]
+    elif tts_prov == "voice_ai":
+        order = ["voice_ai"]
+    elif tts_prov == "windows_sapi":
+        order = ["windows_sapi"]
+    else:
+        # Auto mode: prefer Gemini/VoiceAI for Persian; Deepgram/Gemini/VoiceAI for English
+        if is_persian:
+            if g_key:
+                order.append("gemini")
+            if va_key:
+                order.append("voice_ai")
+            order.append("windows_sapi")
+        else:
+            if dg_key:
+                order.append("deepgram")
+            if g_key:
+                order.append("gemini")
+            if va_key:
+                order.append("voice_ai")
+            order.append("windows_sapi")
+
+    last_err = "No TTS provider configured"
+    for p in order:
+        wav_data: Optional[bytes] = None
+        err: Optional[str] = None
+        eng = p
+        if p == "deepgram":
+            wav_data, err, eng = _synthesize_deepgram_tts(clean_txt, dg_key)
+        elif p == "gemini":
+            wav_data, err, eng = _synthesize_gemini_tts(clean_txt, g_key)
+        elif p == "voice_ai":
+            wav_data, err, eng = _synthesize_voice_ai_tts(clean_txt, va_key)
+        elif p == "windows_sapi":
+            ok_sapi, err_sapi, eng_sapi = _synthesize_windows_sapi_wav(clean_txt, out_wav_path)
+            if ok_sapi:
+                return {"ok": True, "wav_path": out_wav_path, "engine": eng_sapi}
+            last_err = err_sapi or "SAPI failed"
+            continue
+
+        if wav_data and not err:
+            try:
+                with open(out_wav_path, "wb") as fp:
+                    fp.write(wav_data)
+                return {"ok": True, "wav_path": out_wav_path, "engine": eng}
+            except Exception as exc:
+                return {"ok": False, "error": f"Failed to write audio file: {exc}"}
+        if err:
+            last_err = err
+
+    return {"ok": False, "error": last_err}
 
 
 def try_google_gemini_analyze(text: str, force_lang: str = "") -> Optional[Dict[str, Any]]:
@@ -2936,6 +3454,18 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
             ENGINE_CONFIG["deepgram_api_key"] = str(req.get("deepgram_api_key") or "").strip()
         if "deepgram_language" in req and req.get("deepgram_language"):
             ENGINE_CONFIG["deepgram_language"] = str(req.get("deepgram_language")).strip().lower()
+        if "groq_api_key" in req:
+            ENGINE_CONFIG["groq_api_key"] = str(req.get("groq_api_key") or "").strip()
+        if "groq_model" in req and req.get("groq_model"):
+            ENGINE_CONFIG["groq_model"] = str(req.get("groq_model")).strip()
+        if "stt_provider" in req and req.get("stt_provider"):
+            ENGINE_CONFIG["stt_provider"] = str(req.get("stt_provider")).strip().lower()
+        if "voice_mode" in req and req.get("voice_mode"):
+            ENGINE_CONFIG["voice_mode"] = str(req.get("voice_mode")).strip().lower()
+        if "voice_ai_api_key" in req:
+            ENGINE_CONFIG["voice_ai_api_key"] = str(req.get("voice_ai_api_key") or "").strip()
+        if "tts_provider" in req and req.get("tts_provider"):
+            ENGINE_CONFIG["tts_provider"] = str(req.get("tts_provider")).strip().lower()
         if "ai_provider" in req and req.get("ai_provider"):
             ENGINE_CONFIG["ai_provider"] = str(req.get("ai_provider")).strip().lower()
         _GEMINI_CACHE.clear()
@@ -2948,6 +3478,12 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
             "deepseek_configured": bool(ENGINE_CONFIG["deepseek_api_key"]),
             "deepseek_model": ENGINE_CONFIG["deepseek_model"],
             "deepgram_configured": bool(ENGINE_CONFIG["deepgram_api_key"]),
+            "groq_configured": bool(ENGINE_CONFIG["groq_api_key"]),
+            "groq_model": ENGINE_CONFIG["groq_model"],
+            "stt_provider": ENGINE_CONFIG["stt_provider"],
+            "voice_mode": ENGINE_CONFIG["voice_mode"],
+            "voice_ai_configured": bool(ENGINE_CONFIG["voice_ai_api_key"]),
+            "tts_provider": ENGINE_CONFIG["tts_provider"],
             "ai_provider": ENGINE_CONFIG["ai_provider"],
             "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
         }
@@ -3016,16 +3552,50 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
             "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
         }
 
+    if action == "test_groq":
+        test_key = str(req.get("groq_api_key") or ENGINE_CONFIG.get("groq_api_key") or "").strip()
+        ok_gq, msg_gq = test_groq_api(api_key=test_key)
+        return {
+            "id": req_id,
+            "ok": ok_gq,
+            "model": DEFAULT_GROQ_MODEL,
+            "sample_output": msg_gq if ok_gq else "",
+            "error": "" if ok_gq else msg_gq,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+        }
+
     if action == "transcribe_audio":
         wav_path = str(req.get("wav_path") or "").strip()
-        dg_res = transcribe_deepgram_audio(
-            wav_path=wav_path,
-            api_key=str(req.get("deepgram_api_key") or ENGINE_CONFIG.get("deepgram_api_key") or "").strip(),
-            language=str(req.get("deepgram_language") or ENGINE_CONFIG.get("deepgram_language") or "multi").strip(),
-        )
-        dg_res["id"] = req_id
-        dg_res["elapsed_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)
-        return dg_res
+        st_res = transcribe_voice_unified(wav_path=wav_path, req=req)
+        st_res["id"] = req_id
+        st_res["elapsed_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)
+        return st_res
+
+    if action == "clean_voice_text":
+        v_mode = str(req.get("voice_mode") or ENGINE_CONFIG.get("voice_mode") or "cleanup").strip().lower()
+        if v_mode == "exact":
+            cleaned_v, eng_v = text.strip(), "Exact Voice (Verbatim)"
+        else:
+            cleaned_v, eng_v = clean_voice_transcript(text)
+        return {
+            "id": req_id,
+            "ok": True,
+            "transcript": cleaned_v,
+            "text": cleaned_v,
+            "voice_mode": v_mode,
+            "engine": eng_v,
+            "elapsed_ms": round((time.perf_counter() - t0) * 1000.0, 2),
+        }
+
+    if action == "read_aloud":
+        out_wav = str(req.get("out_wav_path") or "").strip()
+        if not out_wav:
+            import tempfile
+            out_wav = os.path.join(tempfile.gettempdir(), f"ferdowsi_tts_{os.getpid()}.wav")
+        tts_res = synthesize_read_aloud(text=text, out_wav_path=out_wav, req=req)
+        tts_res["id"] = req_id
+        tts_res["elapsed_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)
+        return tts_res
 
     if action == "ping":
         llm = detect_local_llm()
