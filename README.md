@@ -91,7 +91,7 @@ Open **FERDOWSI v2 Settings** to configure your preferred providers (or select *
 
 <div dir="rtl" align="right">
 
-## 🇮🇷 راهنمای فارسی (FERDOWSI v2)
+##  راهنمای فارسی (FERDOWSI v2)
 
 **فردوسی نسخه ۲ (`FERDOWSI v2`)** دستیار هوشمند نگارش، تایپ صوتی، بلندخوانی متن و دیکشنری دو زبانه است که در تمام برنامه‌های ویندوز دقیقاً بالای مکان‌نمای شما قرار می‌گیرد.
 
