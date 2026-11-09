@@ -19,7 +19,6 @@ namespace GrammerV
         private bool _allowRealClose;
 
         private ScrollViewer _rootScroll;
-        private Border _helpCard;
         private TextBox _playgroundBox;
         private TextBlock _studioStatusText;
         private Border _studioDictBorder;
@@ -66,11 +65,23 @@ namespace GrammerV
         private ComboBox _cmbTtsProvider;
         private TextBlock _ttsStatusText;
 
+        private ComboBox _cmbMainVoiceModeOnly;
+        private ComboBox _cmbMainVoiceLangOnly;
         private CheckBox _chkShowMicShort;
-        private CheckBox _chkShowVoiceModeShort;
         private CheckBox _chkShowReadAloudShort;
+        private TextBox _studioCustomRewordBox;
 
         private TextBlock _snoozeStatusText;
+
+        private bool IsFa
+        {
+            get { return string.Equals(_engine.Settings.UiLanguage, "fa", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        private string T(string en, string fa)
+        {
+            return IsFa ? fa : en;
+        }
 
         private static readonly SolidColorBrush BgWindow = MakeBrush(11, 17, 32);
         private static readonly SolidColorBrush BgCard = MakeBrush(20, 29, 49);
@@ -125,14 +136,7 @@ namespace GrammerV
 
         public void ScrollToHelp()
         {
-            if (_helpCard != null)
-            {
-                _helpCard.BringIntoView();
-            }
-            else if (_rootScroll != null)
-            {
-                _rootScroll.ScrollToBottom();
-            }
+            AppIconGenerator.OpenHelpPdf();
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -163,6 +167,9 @@ namespace GrammerV
 
         private void BuildStudioUi()
         {
+            FlowDirection = IsFa ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            Title = T("FERDOWSI v2 — Settings", "فردوسی نسخه ۲ (FERDOWSI v2) — تنظیمات");
+
             _rootScroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
@@ -173,10 +180,10 @@ namespace GrammerV
                 Margin = new Thickness(22, 18, 22, 18)
             };
 
-            // 1. Hero Header
+            // 1. Hero Header (No description text below FERDOWSI v2 + Language Switcher + PDF Help)
             DockPanel header = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
 
-            StackPanel titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+            StackPanel titleRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             Border logo = new Border
             {
                 Width = 40, Height = 40, CornerRadius = new CornerRadius(11),
@@ -194,12 +201,7 @@ namespace GrammerV
             StackPanel titleText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             titleText.Children.Add(new TextBlock
             {
-                Text = "FERDOWSI v2", Foreground = TextLight, FontSize = 21, FontWeight = FontWeights.Bold
-            });
-            titleText.Children.Add(new TextBlock
-            {
-                Text = "Above-Cursor English, Persian & Finglish Assistant · Groq & Deepgram Dictation · Cleanup/Exact Voice · Read Aloud (Gemini · Deepgram · Voice AI)",
-                Foreground = TextSub, FontSize = 11.8
+                Text = "FERDOWSI v2", Foreground = TextLight, FontSize = 22, FontWeight = FontWeights.Bold
             });
             titleRow.Children.Add(titleText);
             DockPanel.SetDock(titleRow, Dock.Left);
@@ -210,17 +212,33 @@ namespace GrammerV
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Button helpBtn = MakeButton("❓ Help / راهنما", BgBtn, EmeraldSoft);
-            helpBtn.Margin = new Thickness(0, 0, 8, 0);
-            helpBtn.Click += delegate { ScrollToHelp(); };
 
-            Button summonBtn = MakeButton("✨ Summon Popup (Alt+G)", Emerald, Brushes.White);
+            Button langSwitchBtn = MakeButton(
+                IsFa ? "🌐 Language: English" : "🌐 زبان: فارسی",
+                BgBtn,
+                EmeraldSoft);
+            langSwitchBtn.Margin = new Thickness(0, 0, 8, 0);
+            langSwitchBtn.ToolTip = "Switch Settings UI Language between English and Persian (تغییر زبان تنظیمات به فارسی یا انگلیسی)";
+            langSwitchBtn.Click += delegate
+            {
+                _engine.Settings.UiLanguage = IsFa ? "en" : "fa";
+                _engine.Settings.Save();
+                BuildStudioUi();
+            };
+
+            Button helpBtn = MakeButton(T("📄 Help (PDF)", "📄 راهنما (PDF)"), BgBtn, EmeraldSoft);
+            helpBtn.Margin = new Thickness(0, 0, 8, 0);
+            helpBtn.ToolTip = T("Open the complete English & Persian PDF User Guide", "باز کردن فایل راهنمای کامل PDF (فارسی و انگلیسی)");
+            helpBtn.Click += delegate { AppIconGenerator.OpenHelpPdf(); };
+
+            Button summonBtn = MakeButton(T("✨ Summon Popup (Alt+G)", "✨ باز کردن دستیار (Alt+G)"), Emerald, Brushes.White);
             summonBtn.Margin = new Thickness(0, 0, 8, 0);
             summonBtn.Click += delegate { _overlay.SummonAboveCursor(true); };
 
-            Button quitBtn = MakeButton("Quit App", BgBtn, TextLight);
+            Button quitBtn = MakeButton(T("Quit App", "خروج از برنامه"), BgBtn, TextLight);
             quitBtn.Click += delegate { if (_quitAppCallback != null) _quitAppCallback(); };
 
+            topBtns.Children.Add(langSwitchBtn);
             topBtns.Children.Add(helpBtn);
             topBtns.Children.Add(summonBtn);
             topBtns.Children.Add(quitBtn);
@@ -230,21 +248,24 @@ namespace GrammerV
             header.Children.Add(titleRow);
             main.Children.Add(header);
 
-            // 2. Engine Architecture Status Card
+            // 2. Engine Architecture & Global Windows Shortcuts Card
             Border archCard = MakeCard();
             StackPanel archStack = new StackPanel();
             archStack.Children.Add(new TextBlock
             {
-                Text = "ACTIVE MULTI-LANGUAGE, CLOUD AI (GEMINI / DEEPSEEK), VOICE & NPU RUNTIME",
+                Text = T(
+                    "GLOBAL WINDOWS SHORTCUTS & ACTIVE AI / VOICE RUNTIME",
+                    "میانبرهای سراسری ویندوز و وضعیت موتور هوش مصنوعی و صدا"),
                 Foreground = EmeraldSoft, FontSize = 11, FontWeight = FontWeights.Bold,
                 Margin = new Thickness(0, 0, 0, 6)
             });
 
             WrapPanel pills = new WrapPanel();
-            pills.Children.Add(MakeStatusPill("C++20 Caret, Mic & Password Shield DLL: " + (NativeBridge.IsNativeLoaded ? "Active ✓" : "Fallback")));
-            pills.Children.Add(MakeStatusPill("Python Keep-Alive AI Engine: " + (_engine.IsPythonConnected ? ("v" + _engine.PythonVersion + " ✓") : "C# Fallback")));
-            pills.Children.Add(MakeStatusPill("Password Field Auto-Shield: ON 🔒"));
-            pills.Children.Add(MakeStatusPill("Hotkeys: Alt+G  /  Ctrl+Shift+G"));
+            pills.Children.Add(MakeStatusPill(T("Alt+G : Toggle Card", "Alt+G : باز و بسته کردن کارت")));
+            pills.Children.Add(MakeStatusPill(T("Alt+V : Voice Dictation 🎤", "Alt+V : تایپ صوتی 🎤")));
+            pills.Children.Add(MakeStatusPill(T("Alt+R : Read Aloud 🔊", "Alt+R : بلندخوانی 🔊")));
+            pills.Children.Add(MakeStatusPill(T("Alt+Q : Instant Fix ✨", "Alt+Q : اصلاح فوری جمله ✨")));
+            pills.Children.Add(MakeStatusPill(T("Password Shield: ON 🔒", "محافظ رمز عبور: فعال 🔒")));
 
             _phiStatusText = new TextBlock
             {
@@ -279,18 +300,22 @@ namespace GrammerV
             archCard.Child = archStack;
             main.Children.Add(archCard);
 
-            // 3. Cloud AI, Voice Dictation (Groq / Deepgram), Cleanup vs Exact Voice & Read Aloud Settings Card
+            // 3. Cloud AI, Voice Dictation (Groq / Deepgram) & Read Aloud API Keys Card
             Border aiCard = MakeCard();
             StackPanel aiStack = new StackPanel();
             aiStack.Children.Add(new TextBlock
             {
-                Text = "CLOUD AI, VOICE DICTATION (GROQ / DEEPGRAM), CLEANUP/EXACT VOICE & 🔊 READ ALOUD SETTINGS",
+                Text = T(
+                    "CLOUD AI, VOICE DICTATION (GROQ / DEEPGRAM) & 🔊 READ ALOUD API SETTINGS",
+                    "تنظیمات کلیدهای هوش مصنوعی ابری، تایپ صوتی (Groq / Deepgram) و بلندخوانی 🔊"),
                 Foreground = EmeraldSoft, FontSize = 11.5, FontWeight = FontWeights.Bold,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             aiStack.Children.Add(new TextBlock
             {
-                Text = "Enter your API keys below for Google Gemini, DeepSeek, Groq Whisper Dictation, Deepgram Aura Voice, and Voice AI Read Aloud. Choose 'Cleanup Voice' (cleans fillers/grammar without EVER answering your voice) or 'Exact Voice'.",
+                Text = T(
+                    "Enter your API keys below for Google Gemini, DeepSeek, Groq Whisper Dictation, Deepgram Aura Voice, and Voice AI Read Aloud.",
+                    "کلیدهای API خود را برای Google Gemini، DeepSeek، تایپ صوتی Groq، Deepgram و بلندخوانی Voice AI در بخش زیر وارد کنید."),
                 Foreground = TextSub, FontSize = 11.5, TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 10)
             });
@@ -298,7 +323,8 @@ namespace GrammerV
             // Row A: AI Provider Priority (Full width)
             aiStack.Children.Add(new TextBlock
             {
-                Text = "AI Provider & Source Mode", Foreground = TextLight, FontSize = 12, FontWeight = FontWeights.SemiBold,
+                Text = T("AI Provider & Source Mode", "انتخاب سرویس هوش مصنوعی و منبع پردازش"),
+                Foreground = TextLight, FontSize = 12, FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             _cmbAiProvider = new ComboBox
@@ -819,8 +845,11 @@ namespace GrammerV
                 _engine.Settings.VoiceMode = m;
                 _engine.Settings.DeepgramLanguage = l;
                 SelectDeepgramLangInCombo(l);
+                if (_cmbMainVoiceModeOnly != null) SelectComboByTag(_cmbMainVoiceModeOnly, m, "cleanup");
+                if (_cmbMainVoiceLangOnly != null) SelectComboByTag(_cmbMainVoiceLangOnly, l, "en_fa");
                 _engine.Settings.Save();
                 _engine.ApplyFullAiConfiguration();
+                RefreshRuntimeStatusLabels();
             };
             dgInnerStack.Children.Add(_cmbVoiceMode);
 
@@ -1048,15 +1077,115 @@ namespace GrammerV
             aiCard.Child = aiStack;
             main.Children.Add(aiCard);
 
-            // 4. Behavior, Password Shield & Temporary Pause (10 min / 30 min / 1 hr) Card
+            // 4. Main Settings: Clean/Exact Voice Mode, Voice Language, Short Window & Password Shield Card
             Border settingsCard = MakeCard();
             StackPanel setStack = new StackPanel();
             setStack.Children.Add(new TextBlock
             {
-                Text = "ABOVE-CURSOR WIDGET, PASSWORD PROTECTION & PAUSE TIMER",
-                Foreground = EmeraldSoft, FontSize = 11, FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 6)
+                Text = T(
+                    "MAIN SETTINGS — CLEAN / EXACT VOICE MODE, VOICE LANGUAGE, SHORT WINDOW & PASSWORD PROTECTION",
+                    "تنظیمات اصلی — حالت تایپ صوتی (تمیز / دقیق)، زبان صدا، پنجره کوچک بالای مکان‌نما و محافظ رمز عبور"),
+                Foreground = EmeraldSoft, FontSize = 11.5, FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 8)
             });
+
+            // Main Settings Row: Voice Output Mode (Clean vs Exact) + Voice Language (English+Persian Mixed, Persian, English)
+            Border mainVoiceBox = new Border
+            {
+                Background = BgInput,
+                BorderBrush = Emerald,
+                BorderThickness = new Thickness(1.2),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            Grid mainVoiceGrid = new Grid();
+            mainVoiceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+            mainVoiceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12, GridUnitType.Pixel) });
+            mainVoiceGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
+
+            StackPanel vmCol = new StackPanel();
+            vmCol.Children.Add(new TextBlock
+            {
+                Text = T("Voice Output Mode (Clean vs Exact Voice)", "حالت تایپ صوتی (اصلاح خودکار یا تایپ دقیق)"),
+                Foreground = EmeraldSoft,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            _cmbMainVoiceModeOnly = new ComboBox
+            {
+                Background = BgCombo,
+                Foreground = FgCombo,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5)
+            };
+            AddComboItem(_cmbMainVoiceModeOnly, "cleanup", T(
+                "✨ Cleanup Voice (Clean grammar & fillers — NEVER answers)",
+                "✨ Cleanup Voice (اصلاح تپق‌ها و نگارش — هرگز به صدا پاسخ نمی‌دهد)"));
+            AddComboItem(_cmbMainVoiceModeOnly, "exact", T(
+                "🎙 Exact Voice (Write exact spoken words verbatim)",
+                "🎙 Exact Voice (تایپ دقیق کلمات گفته‌شده بدون تغییر)"));
+            SelectComboByTag(_cmbMainVoiceModeOnly,
+                string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase) ? "exact" : "cleanup",
+                "cleanup");
+            _cmbMainVoiceModeOnly.SelectionChanged += delegate
+            {
+                string m = GetSelectedComboTag(_cmbMainVoiceModeOnly, "cleanup");
+                string l = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
+                _engine.Settings.VoiceMode = (m == "exact") ? "exact" : "cleanup";
+                if (_cmbVoiceMode != null) SelectComboByTag(_cmbVoiceMode, _engine.Settings.VoiceMode + ":" + l, "cleanup:en_fa");
+                _engine.Settings.Save();
+                _engine.ApplyFullAiConfiguration();
+                RefreshRuntimeStatusLabels();
+            };
+            vmCol.Children.Add(_cmbMainVoiceModeOnly);
+            Grid.SetColumn(vmCol, 0);
+            mainVoiceGrid.Children.Add(vmCol);
+
+            StackPanel vlCol = new StackPanel();
+            vlCol.Children.Add(new TextBlock
+            {
+                Text = T("Voice Language (English, Persian, or Mixed)", "زبان تایپ صوتی (فارسی، انگلیسی، یا ترکیبی)"),
+                Foreground = EmeraldSoft,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            _cmbMainVoiceLangOnly = new ComboBox
+            {
+                Background = BgCombo,
+                Foreground = FgCombo,
+                FontSize = 12.5,
+                Padding = new Thickness(8, 5, 8, 5)
+            };
+            AddComboItem(_cmbMainVoiceLangOnly, "en_fa", T(
+                "🌐 English + Persian Mixed (انگلیسی + فارسی ترکیبی)",
+                "🌐 انگلیسی + فارسی ترکیبی (English + Persian Mixed)"));
+            AddComboItem(_cmbMainVoiceLangOnly, "fa", T(
+                "🇮🇷 Persian Only / فقط فارسی",
+                "🇮🇷 فقط فارسی (Persian Only)"));
+            AddComboItem(_cmbMainVoiceLangOnly, "en", T(
+                "🇬🇧 English Only / فقط انگلیسی",
+                "🇬🇧 فقط انگلیسی (English Only)"));
+            SelectComboByTag(_cmbMainVoiceLangOnly, GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage), "en_fa");
+            _cmbMainVoiceLangOnly.SelectionChanged += delegate
+            {
+                string l = GrammerVSettings.NormalizeVoiceLanguage(GetSelectedComboTag(_cmbMainVoiceLangOnly, "en_fa"));
+                string m = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase) ? "exact" : "cleanup";
+                _engine.Settings.DeepgramLanguage = l;
+                SelectDeepgramLangInCombo(l);
+                if (_cmbVoiceMode != null) SelectComboByTag(_cmbVoiceMode, m + ":" + l, "cleanup:en_fa");
+                _engine.Settings.Save();
+                _engine.ApplyFullAiConfiguration();
+                RefreshRuntimeStatusLabels();
+            };
+            vlCol.Children.Add(_cmbMainVoiceLangOnly);
+            Grid.SetColumn(vlCol, 2);
+            mainVoiceGrid.Children.Add(vlCol);
+
+            mainVoiceBox.Child = mainVoiceGrid;
+            setStack.Children.Add(mainVoiceBox);
 
             Border pwdShieldBanner = new Border
             {
@@ -1069,14 +1198,18 @@ namespace GrammerV
             };
             pwdShieldBanner.Child = new TextBlock
             {
-                Text = "🔒 Automatic Password Protection Active: FERDOWSI detects password inputs across browsers and Windows apps, immediately clears its typing buffer, and hides the floating window so your password is never revealed.",
+                Text = T(
+                    "🔒 Automatic Password Protection Active: FERDOWSI detects password inputs across browsers and Windows apps, immediately clears its typing buffer, and hides the floating window so your password is never revealed.",
+                    "🔒 محافظ خودکار رمز عبور فعال است: فردوسی کادرهای رمز عبور در مرورگرها و برنامه‌های ویندوز را تشخیص می‌دهد، حافظه تایپ را پاک می‌کند و پنجره شناور را پنهان می‌سازد تا رمز شما هرگز نمایش داده نشود."),
                 Foreground = EmeraldSoft,
                 FontSize = 11.5,
                 TextWrapping = TextWrapping.Wrap
             };
             setStack.Children.Add(pwdShieldBanner);
 
-            _chkFloating = MakeCheckBox("Show FERDOWSI floating widget above my cursor anywhere in Windows (Edge, Chrome, Notepad, Office, etc.)", _overlay.FloatingEnabled);
+            _chkFloating = MakeCheckBox(T(
+                "Show FERDOWSI floating widget above my cursor anywhere in Windows (Edge, Chrome, Notepad, Office, etc.)",
+                "نمایش پنجره شناور فردوسی بالای مکان‌نما در تمام برنامه‌های ویندوز (Edge، Chrome، Notepad، Office و غیره)"), _overlay.FloatingEnabled);
             _chkFloating.Checked += delegate
             {
                 _overlay.FloatingEnabled = true;
@@ -1092,7 +1225,9 @@ namespace GrammerV
                 RefreshRuntimeStatusLabels();
             };
 
-            _chkTypingTrigger = MakeCheckBox("Appear automatically when typing or clicking into any text field (uncheck for selection / Alt+G only)", _overlay.ShowOnTypingAndFocus);
+            _chkTypingTrigger = MakeCheckBox(T(
+                "Appear automatically when typing or clicking into any text field (uncheck for selection / Alt+G only)",
+                "نمایش خودکار هنگام تایپ یا کلیک در کادرهای متنی (در صورت برداشتن تیک، فقط با انتخاب متن یا Alt+G ظاهر می‌شود)"), _overlay.ShowOnTypingAndFocus);
             _chkTypingTrigger.Checked += delegate
             {
                 _overlay.ShowOnTypingAndFocus = true;
@@ -1109,8 +1244,10 @@ namespace GrammerV
             setStack.Children.Add(_chkFloating);
             setStack.Children.Add(_chkTypingTrigger);
 
-            // Short Window Icon Visibility Checkboxes (Can be disabled so they don't show on the short window!)
-            _chkShowMicShort = MakeCheckBox("Show Voice Dictation microphone icon (🎤) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowMicOnShortWindow);
+            // Short Window Icon Visibility Checkboxes (🎤 and 🔊 on the left of the red error count badge)
+            _chkShowMicShort = MakeCheckBox(T(
+                "Show Voice Dictation microphone icon (🎤) to the left of the error badge on the short window",
+                "نمایش آیکون میکروفون تایپ صوتی (🎤) در سمت چپ نشانگر خطا در پنجره کوچک"), _engine.Settings.ShowMicOnShortWindow);
             _chkShowMicShort.Checked += delegate
             {
                 _engine.Settings.ShowMicOnShortWindow = true;
@@ -1124,21 +1261,9 @@ namespace GrammerV
                 _overlay.UpdateShortWindowButtonsVisibility();
             };
 
-            _chkShowVoiceModeShort = MakeCheckBox("Show Voice Mode & Language buttons (Clean/Exact & EN+FA/FA/EN) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowVoiceModeOnShortWindow);
-            _chkShowVoiceModeShort.Checked += delegate
-            {
-                _engine.Settings.ShowVoiceModeOnShortWindow = true;
-                _engine.Settings.Save();
-                _overlay.UpdateShortWindowButtonsVisibility();
-            };
-            _chkShowVoiceModeShort.Unchecked += delegate
-            {
-                _engine.Settings.ShowVoiceModeOnShortWindow = false;
-                _engine.Settings.Save();
-                _overlay.UpdateShortWindowButtonsVisibility();
-            };
-
-            _chkShowReadAloudShort = MakeCheckBox("Show Read Aloud speaker icon (🔊) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowReadAloudOnShortWindow);
+            _chkShowReadAloudShort = MakeCheckBox(T(
+                "Show Read Aloud speaker icon (🔊) to the left of the error badge on the short window",
+                "نمایش آیکون بلندگو (🔊) در سمت چپ نشانگر خطا در پنجره کوچک"), _engine.Settings.ShowReadAloudOnShortWindow);
             _chkShowReadAloudShort.Checked += delegate
             {
                 _engine.Settings.ShowReadAloudOnShortWindow = true;
@@ -1153,24 +1278,23 @@ namespace GrammerV
             };
 
             setStack.Children.Add(_chkShowMicShort);
-            setStack.Children.Add(_chkShowVoiceModeShort);
             setStack.Children.Add(_chkShowReadAloudShort);
 
             // Quick Pause / Close Timer Bar (10 min, 30 min, 1 hr, Resume)
             WrapPanel snoozeBar = new WrapPanel { Margin = new Thickness(0, 6, 0, 4) };
-            Button btnPause10 = MakeButton("⏸ Close for 10 min", BgBtn, EmeraldSoft);
+            Button btnPause10 = MakeButton(T("⏸ Close for 10 min", "⏸ توقف برای ۱۰ دقیقه"), BgBtn, EmeraldSoft);
             btnPause10.Margin = new Thickness(0, 0, 6, 4);
             btnPause10.Click += delegate { _overlay.SnoozeForMinutes(10); };
 
-            Button btnPause30 = MakeButton("⏸ Close for 30 min", BgBtn, EmeraldSoft);
+            Button btnPause30 = MakeButton(T("⏸ Close for 30 min", "⏸ توقف برای ۳۰ دقیقه"), BgBtn, EmeraldSoft);
             btnPause30.Margin = new Thickness(0, 0, 6, 4);
             btnPause30.Click += delegate { _overlay.SnoozeForMinutes(30); };
 
-            Button btnPause60 = MakeButton("⏸ Close for 1 hour", BgBtn, EmeraldSoft);
+            Button btnPause60 = MakeButton(T("⏸ Close for 1 hour", "⏸ توقف برای ۱ ساعت"), BgBtn, EmeraldSoft);
             btnPause60.Margin = new Thickness(0, 0, 6, 4);
             btnPause60.Click += delegate { _overlay.SnoozeForMinutes(60); };
 
-            Button btnResumeNow = MakeButton("▶ Resume Widget Now", Emerald, Brushes.White);
+            Button btnResumeNow = MakeButton(T("▶ Resume Widget Now", "▶ فعال‌سازی مجدد پنجره"), Emerald, Brushes.White);
             btnResumeNow.Margin = new Thickness(0, 0, 8, 4);
             btnResumeNow.Click += delegate
             {
@@ -1187,7 +1311,9 @@ namespace GrammerV
 
             _snoozeStatusText = new TextBlock
             {
-                Text = "Widget Status: " + _overlay.GetSnoozeStatusLabel() + "  (Tip: Click '×' on the small cursor window anytime to pause for 10 min, 30 min, or 1 hr)",
+                Text = T(
+                    "Widget Status: " + _overlay.GetSnoozeStatusLabel() + "  (Tip: Click '×' on the small cursor window anytime to pause for 10 min, 30 min, or 1 hr)",
+                    "وضعیت پنجره شناور: " + _overlay.GetSnoozeStatusLabel() + "  (نکته: با کلیک روی «×» در پنجره کوچک می‌توانید آن را ۱۰ دقیقه، ۳۰ دقیقه یا ۱ ساعت متوقف کنید)"),
                 Foreground = TextSub,
                 FontSize = 11.5,
                 TextWrapping = TextWrapping.Wrap
@@ -1391,6 +1517,66 @@ namespace GrammerV
             directBar.Children.Add(btnEmail);
             playStack.Children.Add(directBar);
 
+            // Custom Reword / Format Instruction Box in Studio Sandbox
+            Border studioCustomRewordBorder = new Border
+            {
+                Background = BgInput,
+                BorderBrush = Emerald,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 6, 0, 4)
+            };
+            StackPanel studioCustomRewordStack = new StackPanel();
+            studioCustomRewordStack.Children.Add(new TextBlock
+            {
+                Text = T(
+                    "✨ Custom Reword / Format Instruction (write the exact format or style you want):",
+                    "✨ دستور سفارشی بازنویسی و فرمت‌دهی (فرمت یا لحن دلخواه خود را بنویسید):"),
+                Foreground = EmeraldSoft,
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            DockPanel studioCustomRow = new DockPanel();
+            Button btnApplyCustomReword = MakeButton(T("Apply ✨", "اعمال ✨"), Emerald, Brushes.White);
+            btnApplyCustomReword.Padding = new Thickness(12, 5, 12, 5);
+            btnApplyCustomReword.Margin = new Thickness(6, 0, 0, 0);
+            btnApplyCustomReword.Click += async delegate
+            {
+                string customInstruction = (_studioCustomRewordBox != null && _studioCustomRewordBox.Text != null)
+                    ? _studioCustomRewordBox.Text.Trim()
+                    : string.Empty;
+                if (string.IsNullOrEmpty(customInstruction))
+                {
+                    _studioStatusText.Text = T(
+                        "Please type your desired format or style instruction first (e.g. 'Summarize in 3 bullet points').",
+                        "لطفاً ابتدا دستور فرمت یا لحن دلخواه خود را وارد کنید.");
+                    _studioStatusText.Foreground = CoralSoft;
+                    return;
+                }
+                TransformResponse r = await _engine.RewordAsync(GetPlaygroundTargetText(), "custom", 0, customInstruction);
+                ApplyPlaygroundResult(r.Result, string.Format("Applied Custom Format ('{0}') via {1} in {2:0.0} ms", customInstruction, r.Engine, r.ElapsedMs));
+            };
+            DockPanel.SetDock(btnApplyCustomReword, Dock.Right);
+            studioCustomRow.Children.Add(btnApplyCustomReword);
+
+            _studioCustomRewordBox = new TextBox
+            {
+                Background = BgCard,
+                Foreground = TextLight,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderCol,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 5, 8, 5),
+                FontSize = 12.5,
+                Text = "Rewrite as a polite professional email with bullet points"
+            };
+            studioCustomRow.Children.Add(_studioCustomRewordBox);
+            studioCustomRewordStack.Children.Add(studioCustomRow);
+            studioCustomRewordBorder.Child = studioCustomRewordStack;
+            playStack.Children.Add(studioCustomRewordBorder);
+
             _studioDictBorder = new Border
             {
                 Background = BgInput,
@@ -1407,7 +1593,9 @@ namespace GrammerV
 
             _studioStatusText = new TextBlock
             {
-                Text = "Tip: Click anywhere in the text box, drag-select words, or press Alt+G in any app to see the floating widget right above your cursor! Closing this window keeps FERDOWSI running in your System Tray.",
+                Text = T(
+                    "Tip: Press Alt+G (Card), Alt+V (Voice 🎤), Alt+R (Read Aloud 🔊), or Alt+Q (Quick Fix ✨) anywhere in Windows!",
+                    "نکته: کلیدهای Alt+G (کارت)، Alt+V (تایپ صوتی 🎤)، Alt+R (بلندخوانی 🔊) یا Alt+Q (اصلاح فوری ✨) در تمام ویندوز فعال هستند!"),
                 Foreground = TextSub,
                 FontSize = 11.5,
                 TextWrapping = TextWrapping.Wrap,
@@ -1418,114 +1606,7 @@ namespace GrammerV
             playCard.Child = playStack;
             main.Children.Add(playCard);
 
-            // 6. Bilingual Help & User Guide Card (English & Persian / راهنمای فارسی و انگلیسی)
-            _helpCard = MakeCard();
-            StackPanel helpOuter = new StackPanel();
-            helpOuter.Children.Add(new TextBlock
-            {
-                Text = "HELP & USER GUIDE  ·  راهنمای جامع استفاده و دریافت API (ENGLISH & فارسی)",
-                Foreground = EmeraldSoft,
-                FontSize = 11,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 10)
-            });
-
-            Grid helpGrid = new Grid();
-            helpGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-            helpGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });
-            helpGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-
-            // Left Column: English Help
-            Border enHelpBox = new Border
-            {
-                Background = BgInput,
-                BorderBrush = BorderCol,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(13, 11, 13, 11)
-            };
-            StackPanel enStack = new StackPanel { FlowDirection = FlowDirection.LeftToRight };
-            enStack.Children.Add(new TextBlock
-            {
-                Text = "📘 English User Guide & API Setup",
-                Foreground = EmeraldSoft,
-                FontSize = 13.5,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 6)
-            });
-            enStack.Children.Add(MakeHelpItem(
-                "1. Important: API Keys for Cloud AI, Voice Dictation & Read Aloud",
-                "• Google Gemini API (Free tier available): Click 'Get Gemini Key ↗' (https://aistudio.google.com/apikey), create a key, paste it above, and click '⚡ Save & Test Google Gemini'.\n" +
-                "• DeepSeek API: Click 'Get DeepSeek Key ↗' (https://platform.deepseek.com/api_keys), create a key, and click '⚡ Save & Test DeepSeek API'.\n" +
-                "• Groq Whisper Dictation API: Click 'Get Groq Key ↗' (https://console.groq.com/keys) for ultra-fast Whisper-Large-v3-Turbo voice dictation.\n" +
-                "• Deepgram Voice / Aura API ($200 free credit): Click 'Get Deepgram Key ↗' (https://console.deepgram.com/) for Nova-2 dictation and Aura Read Aloud."));
-            enStack.Children.Add(MakeHelpItem(
-                "2. ✨ 'AI Only' Mode & Fast <0.8s AI",
-                "In 'AI Provider & Source Mode', select 'AI Only (Cloud AI Only — Never Python Offline)' or click '✨ Use AI as Only Source'. FERDOWSI exclusively uses your Cloud AI with persistent HTTP Keep-Alive and 0-thinking latency (~0.4–0.8s)."));
-            enStack.Children.Add(MakeHelpItem(
-                "3. 🎤 Voice Dictation: 'Cleanup Voice' (Never Answers!) vs 'Exact Voice' & 🔊 Read Aloud",
-                "• Cleanup Voice vs Exact Voice: Choose 'Cleanup Voice' to clean spoken fillers ('um', 'uh'), stutters, and grammar WITHOUT ever answering or replying to what you said, or choose 'Exact Voice' for verbatim speech-to-text.\n" +
-                "• 🔊 Read Aloud: Click 🔊 to hear any text read aloud via Google Gemini Audio, Deepgram Aura, Voice AI, or Windows SAPI.\n" +
-                "• Hide Icons on Short Window: In the section above, uncheck the boxes if you want to hide 🎤, Clean/Exact, or 🔊 on the short cursor window."));
-            enStack.Children.Add(MakeHelpItem(
-                "4. 🔒 Automatic Password Protection & ⏸ Close for 10 Minutes",
-                "• Password Shield: FERDOWSI automatically detects password fields across browsers and Windows apps, clears its typing buffer, and hides so your password is never revealed.\n" +
-                "• Pause / Close Timer: Click '×' on the small cursor window (or use the buttons above) to dismiss for the current box or close for 10 min, 30 min, or 1 hour."));
-            enStack.Children.Add(MakeHelpItem(
-                "5. ✓ Correct, ✨ Reword, Aa Format & 📖 AI Dictionary",
-                "Fixes English/Persian grammar and half-spaces (نیم‌فاصله), converts Finglish (\"salam halet chetore\" → \"سلام، حالت چطوره؟\"), rewrites in 6 tones, and shows Persian translations, Synonyms (Syn), Antonyms (Ant), and examples. Your API keys are saved only in %APPDATA%\\FERDOWSI\\settings.json."));
-            enHelpBox.Child = enStack;
-            Grid.SetColumn(enHelpBox, 0);
-            helpGrid.Children.Add(enHelpBox);
-
-            // Right Column: Persian Help (راهنمای فارسی)
-            Border faHelpBox = new Border
-            {
-                Background = BgInput,
-                BorderBrush = BorderCol,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(13, 11, 13, 11)
-            };
-            StackPanel faStack = new StackPanel { FlowDirection = FlowDirection.RightToLeft };
-            faStack.Children.Add(new TextBlock
-            {
-                Text = "📘 راهنمای جامع استفاده و دریافت کلید API (فارسی — نسخه v2)",
-                Foreground = EmeraldSoft,
-                FontSize = 13.5,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 6)
-            });
-            faStack.Children.Add(MakeHelpItem(
-                "۱. دریافت کلیدهای API (Gemini، DeepSeek، Groq، Deepgram و Voice AI)",
-                "• کلید رایگان Google Gemini: روی «Get Gemini Key ↗» (aistudio.google.com/apikey) کلیک کنید و کلید بسازید.\n" +
-                "• کلید DeepSeek: روی «Get DeepSeek Key ↗» (platform.deepseek.com/api_keys) کلیک کنید.\n" +
-                "• کلید تایپ صوتی سریع Groq: روی «Get Groq Key ↗» (console.groq.com/keys) کلیک کنید تا با مدل Whisper-Large-v3-Turbo به سرعت تایپ صوتی انجام دهید.\n" +
-                "• کلید Deepgram Aura / Voice: روی «Get Deepgram Key ↗» (console.deepgram.com) کلیک کنید."));
-            faStack.Children.Add(MakeHelpItem(
-                "۲. حالت «فقط هوش مصنوعی (AI Only)» و سرعت بسیار بالا (زیر ۱ ثانیه)",
-                "اگر می‌خواهید برنامه هیچ‌گاه از موتور پایتون آفلاین استفاده نکند، گزینه «AI Only» را انتخاب کنید یا دکمه «✨ Use AI as Only Source» را بزنید."));
-            faStack.Children.Add(MakeHelpItem(
-                "۳. 🎤 تایپ صوتی (Cleanup Voice و Exact Voice) و 🔊 بلندخوانی متن (Read Aloud)",
-                "• حالت Cleanup Voice در برابر Exact Voice: در حالت Cleanup Voice، برنامه فقط تپق‌ها و خطاهای نگارشی صدای شما را تمیز می‌کند و هرگز به سوالات یا جملات شما پاسخ مکالمه‌ای نمی‌دهد! در حالت Exact Voice، دقیقاً همان کلمات گفته‌شده تایپ می‌شوند.\n" +
-                "• 🔊 بلندخوانی متن (Read Aloud): با کلیک روی 🔊، متن انتخاب‌شده با صدای Gemini، Deepgram یا Voice AI خوانده می‌شود.\n" +
-                "• مخفی کردن دکمه‌ها در پنجره کوچک: از بخش تنظیمات می‌توانید نمایش آیکون‌های 🎤، Clean/Exact و 🔊 را در پنجره کوچک بالای مکان‌نما غیرفعال کنید."));
-            faStack.Children.Add(MakeHelpItem(
-                "۴. 🔒 محافظت خودکار از رمز عبور و ⏸ بستن موقت (۱۰ دقیقه)",
-                "• امنیت رمز عبور: هنگام کلیک یا تایپ در کادرهای رمز عبور (Password)، فردوسی به طور خودکار غیرفعال و پنهان می‌شود تا رمز شما هرگز نمایش داده نشود.\n" +
-                "• بستن موقت: با کلیک روی دکمه «×» در پنجره کوچک بالای مکان‌نما می‌توانید آن را برای ۱۰ دقیقه (10 min)، ۳۰ دقیقه یا ۱ ساعت متوقف کنید."));
-            faStack.Children.Add(MakeHelpItem(
-                "۵. اصلاح متن، فینگلیش به فارسی، بازنویسی و دیکشنری هوشمند",
-                "اصلاح خطاهای انگلیسی و فارسی و نیم‌فاصله، تبدیل فینگلیش (salam halet chetore ← سلام، حالت چطوره؟)، ۶ لحن بازنویسی و دیکشنری جامع (ترجمه فارسی، مترادف، متضاد و مثال). کلیدهای شما فقط در %APPDATA%\\FERDOWSI\\settings.json ذخیره می‌شوند."));
-            faHelpBox.Child = faStack;
-            Grid.SetColumn(faHelpBox, 2);
-            helpGrid.Children.Add(faHelpBox);
-
-            helpOuter.Children.Add(helpGrid);
-            _helpCard.Child = helpOuter;
-            main.Children.Add(_helpCard);
-
-            // 7. GitHub Page Footer Card (Bottom of Settings Page)
+            // 6. GitHub Hyperlink Footer Card (Bottom of Settings Page — Help moved to PDF)
             Border footerCard = new Border
             {
                 Background = BgCard,
@@ -1537,35 +1618,32 @@ namespace GrammerV
             };
             DockPanel footerDock = new DockPanel();
 
-            Button githubBtn = MakeButton("GitHub: https://github.com/nimamoslemy ↗", BgBtn, EmeraldSoft);
-            githubBtn.VerticalAlignment = VerticalAlignment.Center;
-            githubBtn.Click += delegate { OpenAuthorGitHub(); };
-            DockPanel.SetDock(githubBtn, Dock.Right);
-            footerDock.Children.Add(githubBtn);
-
-            StackPanel authorStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            authorStack.Children.Add(new TextBlock
-            {
-                Text = "FERDOWSI v2 — Open Source Project",
-                Foreground = TextLight,
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 2)
-            });
+            Button pdfGuideBtn = MakeButton(T("📄 Open Help Guide (PDF)", "📄 باز کردن فایل راهنما (PDF)"), BgBtn, EmeraldSoft);
+            pdfGuideBtn.VerticalAlignment = VerticalAlignment.Center;
+            pdfGuideBtn.Click += delegate { ScrollToHelp(); };
+            DockPanel.SetDock(pdfGuideBtn, Dock.Right);
+            footerDock.Children.Add(pdfGuideBtn);
 
             TextBlock linkBlock = new TextBlock
             {
-                FontSize = 12.5,
-                Foreground = TextSub
+                FontSize = 13,
+                Foreground = TextLight,
+                VerticalAlignment = VerticalAlignment.Center
             };
-            linkBlock.Inlines.Add(new Run("GitHub Page: "));
+            linkBlock.Inlines.Add(new Run(T("GitHub: ", "گیت‌هاب: ")));
             Hyperlink ghLink = new Hyperlink(new Run("https://github.com/nimamoslemy"));
+            ghLink.NavigateUri = new Uri("https://github.com/nimamoslemy");
             ghLink.Foreground = EmeraldSoft;
-            ghLink.Click += delegate { OpenAuthorGitHub(); };
+            ghLink.TextDecorations = TextDecorations.Underline;
+            ghLink.Cursor = Cursors.Hand;
+            ghLink.RequestNavigate += delegate(object s, System.Windows.Navigation.RequestNavigateEventArgs e)
+            {
+                OpenAuthorGitHub();
+                e.Handled = true;
+            };
             linkBlock.Inlines.Add(ghLink);
-            authorStack.Children.Add(linkBlock);
 
-            footerDock.Children.Add(authorStack);
+            footerDock.Children.Add(linkBlock);
             footerCard.Child = footerDock;
             main.Children.Add(footerCard);
 
@@ -1914,13 +1992,25 @@ namespace GrammerV
         {
             _engine.Settings.GroqApiKey = GetEnteredGroqKey();
             _engine.Settings.SttProvider = GetSelectedComboTag(_cmbSttProvider, "auto");
-            string vmTag = GetSelectedComboTag(_cmbVoiceMode, "cleanup:en_fa");
-            string[] vmParts = vmTag.Split(':');
-            _engine.Settings.VoiceMode = (vmParts.Length > 0 && vmParts[0] == "exact") ? "exact" : "cleanup";
-            if (vmParts.Length > 1)
+            if (_cmbMainVoiceModeOnly != null && _cmbMainVoiceLangOnly != null)
             {
-                _engine.Settings.DeepgramLanguage = GrammerVSettings.NormalizeVoiceLanguage(vmParts[1]);
-                SelectDeepgramLangInCombo(_engine.Settings.DeepgramLanguage);
+                string m = GetSelectedComboTag(_cmbMainVoiceModeOnly, "cleanup");
+                string l = GrammerVSettings.NormalizeVoiceLanguage(GetSelectedComboTag(_cmbMainVoiceLangOnly, "en_fa"));
+                _engine.Settings.VoiceMode = (m == "exact") ? "exact" : "cleanup";
+                _engine.Settings.DeepgramLanguage = l;
+                SelectDeepgramLangInCombo(l);
+                if (_cmbVoiceMode != null) SelectComboByTag(_cmbVoiceMode, _engine.Settings.VoiceMode + ":" + l, "cleanup:en_fa");
+            }
+            else
+            {
+                string vmTag = GetSelectedComboTag(_cmbVoiceMode, "cleanup:en_fa");
+                string[] vmParts = vmTag.Split(':');
+                _engine.Settings.VoiceMode = (vmParts.Length > 0 && vmParts[0] == "exact") ? "exact" : "cleanup";
+                if (vmParts.Length > 1)
+                {
+                    _engine.Settings.DeepgramLanguage = GrammerVSettings.NormalizeVoiceLanguage(vmParts[1]);
+                    SelectDeepgramLangInCombo(_engine.Settings.DeepgramLanguage);
+                }
             }
             _engine.Settings.VoiceAiApiKey = GetEnteredVoiceAiKey();
             _engine.Settings.TtsProvider = GetSelectedComboTag(_cmbTtsProvider, "auto");

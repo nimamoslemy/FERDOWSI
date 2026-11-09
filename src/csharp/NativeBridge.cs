@@ -95,6 +95,9 @@ namespace GrammerV
         [DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
         // Native C++ DLL exports
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int gv_init();
@@ -195,10 +198,20 @@ namespace GrammerV
 
         public const int HOTKEY_ID_ALT_G = 9001;
         public const int HOTKEY_ID_CTRL_SHIFT_G = 9002;
+        public const int HOTKEY_ID_ALT_V = 9003;
+        public const int HOTKEY_ID_CTRL_SHIFT_V = 9004;
+        public const int HOTKEY_ID_ALT_R = 9005;
+        public const int HOTKEY_ID_CTRL_SHIFT_R = 9006;
+        public const int HOTKEY_ID_ALT_Q = 9007;
+        public const int HOTKEY_ID_CTRL_SHIFT_F = 9008;
         public const uint MOD_ALT = 0x0001;
         public const uint MOD_CONTROL = 0x0002;
         public const uint MOD_SHIFT = 0x0004;
         public const uint VK_G = 0x47;
+        public const uint VK_V = 0x56;
+        public const uint VK_R = 0x52;
+        public const uint VK_Q = 0x51;
+        public const uint VK_F = 0x46;
 
         public static bool IsNativeLoaded { get; private set; }
         public static string LoadedDllPath { get; private set; }
@@ -264,6 +277,21 @@ namespace GrammerV
             if (hwnd == IntPtr.Zero) return;
             int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
             SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
+        }
+
+        public static void SetWindowActivable(IntPtr hwnd, bool activable)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            if (activable)
+            {
+                SetWindowLong(hwnd, GWL_EXSTYLE, (exStyle & ~WS_EX_NOACTIVATE) | WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
+                try { SetForegroundWindow(hwnd); } catch { }
+            }
+            else
+            {
+                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
+            }
         }
 
         public static void MoveWindowPhysicalNoActivate(IntPtr hwnd, int physX, int physY)

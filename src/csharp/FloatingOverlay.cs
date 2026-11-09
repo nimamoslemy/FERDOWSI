@@ -83,8 +83,6 @@ namespace GrammerV
         private TextBlock _pillBadgeText;
         private TextBlock _pillSummaryText;
         private Button _pillMicBtn;
-        private Button _pillVoiceModeBtn;
-        private Button _pillVoiceLangBtn;
         private Button _pillReadAloudBtn;
         private Button _pillQuickFixBtn;
 
@@ -93,8 +91,6 @@ namespace GrammerV
         private TextBlock _cardSourceBadge;
         private TextBlock _cardTimingBadge;
         private Button _cardMicBtn;
-        private Button _cardVoiceModeBtn;
-        private Button _cardVoiceLangBtn;
         private Button _cardReadAloudBtn;
         private Button _aiModeToggleBtn;
         private Button _tabCorrectBtn;
@@ -104,7 +100,11 @@ namespace GrammerV
         private StackPanel _tabContentHost;
         private TextBlock _diffPreviewBlock;
         private WrapPanel _issuesWrap;
+        private StackPanel _rewordSectionPanel;
         private WrapPanel _rewordChipsWrap;
+        private TextBox _customRewordInputBox;
+        private Button _customRewordApplyBtn;
+        private bool _allowInputBoxFocus;
         private WrapPanel _formatChipsWrap;
         private TextBox _outputPreviewBox;
         private Border _dictBox;
@@ -246,9 +246,45 @@ namespace GrammerV
                 src.AddHook(WndProc);
             }
 
+            // Global Windows Shortcuts:
+            // Alt+G / Ctrl+Shift+G : Summon or Toggle FERDOWSI Card
+            // Alt+V / Ctrl+Shift+V : Start / Stop Voice Dictation (🎤)
+            // Alt+R / Ctrl+Shift+R : Read Aloud / Stop Reading (🔊)
+            // Alt+Q / Ctrl+Shift+F : Instant Quick-Fix (Fix ✨)
             NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_G, NativeBridge.MOD_ALT, NativeBridge.VK_G);
             NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_G,
                 NativeBridge.MOD_CONTROL | NativeBridge.MOD_SHIFT, NativeBridge.VK_G);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_V, NativeBridge.MOD_ALT, NativeBridge.VK_V);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_V,
+                NativeBridge.MOD_CONTROL | NativeBridge.MOD_SHIFT, NativeBridge.VK_V);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_R, NativeBridge.MOD_ALT, NativeBridge.VK_R);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_R,
+                NativeBridge.MOD_CONTROL | NativeBridge.MOD_SHIFT, NativeBridge.VK_R);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_Q, NativeBridge.MOD_ALT, NativeBridge.VK_Q);
+            NativeBridge.RegisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_F,
+                NativeBridge.MOD_CONTROL | NativeBridge.MOD_SHIFT, NativeBridge.VK_F);
+
+            PreviewKeyDown += delegate(object s, KeyEventArgs ke)
+            {
+                if (ke.Key == Key.Escape)
+                {
+                    if (_isVoiceRecording)
+                    {
+                        OnMicButtonClicked(_pillMicBtn, new RoutedEventArgs());
+                        ke.Handled = true;
+                    }
+                    else if (_isReadingAloud)
+                    {
+                        StopReadAloudPlayback();
+                        ke.Handled = true;
+                    }
+                    else if (_isExpanded)
+                    {
+                        SetExpanded(false);
+                        ke.Handled = true;
+                    }
+                }
+            };
 
             _aiPrefetchTimer = new DispatcherTimer();
             _aiPrefetchTimer.Interval = TimeSpan.FromMilliseconds(320);
@@ -277,6 +313,12 @@ namespace GrammerV
             {
                 NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_G);
                 NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_G);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_V);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_V);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_R);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_R);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_ALT_Q);
+                NativeBridge.UnregisterHotKey(_hwnd, NativeBridge.HOTKEY_ID_CTRL_SHIFT_F);
             }
         }
 
@@ -284,8 +326,11 @@ namespace GrammerV
         {
             if (msg == NativeBridge.WM_MOUSEACTIVATE)
             {
-                handled = true;
-                return new IntPtr(NativeBridge.MA_NOACTIVATE);
+                if (!_allowInputBoxFocus)
+                {
+                    handled = true;
+                    return new IntPtr(NativeBridge.MA_NOACTIVATE);
+                }
             }
             if (msg == NativeBridge.WM_HOTKEY)
             {
@@ -293,7 +338,32 @@ namespace GrammerV
                 if (id == NativeBridge.HOTKEY_ID_ALT_G || id == NativeBridge.HOTKEY_ID_CTRL_SHIFT_G)
                 {
                     handled = true;
-                    SummonAboveCursor(true);
+                    if (_isExpanded && Visibility == Visibility.Visible)
+                    {
+                        SetExpanded(false);
+                    }
+                    else
+                    {
+                        SummonAboveCursor(true);
+                    }
+                }
+                else if (id == NativeBridge.HOTKEY_ID_ALT_V || id == NativeBridge.HOTKEY_ID_CTRL_SHIFT_V)
+                {
+                    handled = true;
+                    SummonAboveCursor(false);
+                    OnMicButtonClicked(_pillMicBtn, new RoutedEventArgs());
+                }
+                else if (id == NativeBridge.HOTKEY_ID_ALT_R || id == NativeBridge.HOTKEY_ID_CTRL_SHIFT_R)
+                {
+                    handled = true;
+                    SummonAboveCursor(false);
+                    OnReadAloudClicked(_pillReadAloudBtn, new RoutedEventArgs());
+                }
+                else if (id == NativeBridge.HOTKEY_ID_ALT_Q || id == NativeBridge.HOTKEY_ID_CTRL_SHIFT_F)
+                {
+                    handled = true;
+                    SummonAboveCursor(false);
+                    OnQuickFixClicked(_pillQuickFixBtn, new RoutedEventArgs());
                 }
             }
             return IntPtr.Zero;
@@ -325,15 +395,29 @@ namespace GrammerV
             pillRow.Orientation = Orientation.Horizontal;
             pillRow.VerticalAlignment = VerticalAlignment.Center;
 
+            _pillMicBtn = CreateSmallButton("🎤", BgChip, EmeraldSoft);
+            _pillMicBtn.Margin = new Thickness(1, 0, 4, 0);
+            _pillMicBtn.Padding = new Thickness(6, 2, 6, 2);
+            _pillMicBtn.ToolTip = "Voice Dictation (Alt+V) — click to start/stop recording";
+            _pillMicBtn.Click += OnMicButtonClicked;
+
+            _pillReadAloudBtn = CreateSmallButton("🔊", BgChip, EmeraldSoft);
+            _pillReadAloudBtn.Margin = new Thickness(0, 0, 5, 0);
+            _pillReadAloudBtn.Padding = new Thickness(5, 2, 5, 2);
+            _pillReadAloudBtn.ToolTip = "Read Aloud (Alt+R) — click to listen or stop";
+            _pillReadAloudBtn.Click += OnReadAloudClicked;
+
             _pillBadgeBorder = new Border();
             _pillBadgeBorder.Width = 22;
             _pillBadgeBorder.Height = 22;
             _pillBadgeBorder.CornerRadius = new CornerRadius(11);
             _pillBadgeBorder.Background = Emerald;
             _pillBadgeBorder.VerticalAlignment = VerticalAlignment.Center;
+            _pillBadgeBorder.Margin = new Thickness(0, 0, 3, 0);
+            _pillBadgeBorder.ToolTip = "Click to open FERDOWSI Card (Alt+G)";
 
             _pillBadgeText = new TextBlock();
-            _pillBadgeText.Text = "F";
+            _pillBadgeText.Text = "✓";
             _pillBadgeText.Foreground = Brushes.White;
             _pillBadgeText.FontWeight = FontWeights.Bold;
             _pillBadgeText.FontSize = 11.5;
@@ -342,44 +426,20 @@ namespace GrammerV
             _pillBadgeBorder.Child = _pillBadgeText;
 
             _pillSummaryText = new TextBlock();
-            _pillSummaryText.Text = "FERDOWSI";
+            _pillSummaryText.Text = string.Empty;
             _pillSummaryText.Foreground = TextPrimary;
             _pillSummaryText.FontSize = 11.5;
             _pillSummaryText.FontWeight = FontWeights.SemiBold;
             _pillSummaryText.VerticalAlignment = VerticalAlignment.Center;
-            _pillSummaryText.Margin = new Thickness(7, 0, 6, 0);
-            _pillSummaryText.MaxWidth = 210;
+            _pillSummaryText.Margin = new Thickness(4, 0, 5, 0);
+            _pillSummaryText.MaxWidth = 200;
             _pillSummaryText.TextTrimming = TextTrimming.CharacterEllipsis;
-
-            _pillMicBtn = CreateSmallButton("🎤", BgChip, EmeraldSoft);
-            _pillMicBtn.Margin = new Thickness(2, 0, 3, 0);
-            _pillMicBtn.Padding = new Thickness(6, 2, 6, 2);
-            _pillMicBtn.ToolTip = "Write with your voice (Groq Whisper / Deepgram) — click to start/stop recording";
-            _pillMicBtn.Click += OnMicButtonClicked;
-
-            _pillVoiceModeBtn = CreateSmallButton("Clean", EmeraldDark, EmeraldSoft);
-            _pillVoiceModeBtn.Margin = new Thickness(0, 0, 2, 0);
-            _pillVoiceModeBtn.Padding = new Thickness(5, 2, 5, 2);
-            _pillVoiceModeBtn.FontSize = 10.2;
-            _pillVoiceModeBtn.ToolTip = "Toggle Voice Output Mode: 'Cleanup Voice' (cleans grammar & fillers without answering) vs 'Exact Voice' (exact words spoken)";
-            _pillVoiceModeBtn.Click += OnVoiceModeToggleClicked;
-
-            _pillVoiceLangBtn = CreateSmallButton("EN+FA", BgChip, EmeraldSoft);
-            _pillVoiceLangBtn.Margin = new Thickness(0, 0, 3, 0);
-            _pillVoiceLangBtn.Padding = new Thickness(5, 2, 5, 2);
-            _pillVoiceLangBtn.FontSize = 10.0;
-            _pillVoiceLangBtn.ToolTip = "Cycle Voice Language: English + Persian Mixed (EN+FA) → Persian Only (FA) → English Only (EN)";
-            _pillVoiceLangBtn.Click += OnVoiceLangCycleClicked;
-
-            _pillReadAloudBtn = CreateSmallButton("🔊", BgChip, EmeraldSoft);
-            _pillReadAloudBtn.Margin = new Thickness(0, 0, 3, 0);
-            _pillReadAloudBtn.Padding = new Thickness(5, 2, 5, 2);
-            _pillReadAloudBtn.ToolTip = "Read Aloud (Gemini / Deepgram Aura / Voice AI) — click to listen or stop";
-            _pillReadAloudBtn.Click += OnReadAloudClicked;
+            _pillSummaryText.Visibility = Visibility.Collapsed;
 
             _pillQuickFixBtn = CreateSmallButton("Fix ✨", Emerald, Brushes.White);
             _pillQuickFixBtn.Margin = new Thickness(2, 0, 4, 0);
             _pillQuickFixBtn.Padding = new Thickness(7, 2, 7, 2);
+            _pillQuickFixBtn.ToolTip = "Instant Quick-Fix (Alt+Q)";
             _pillQuickFixBtn.Visibility = Visibility.Collapsed;
             _pillQuickFixBtn.Click += OnQuickFixClicked;
 
@@ -398,12 +458,11 @@ namespace GrammerV
                 SetCloseMenuOpen(true);
             };
 
+            // Short window left-to-right order: [🎤] [🔊] [Red Error Count / ✓] [Error Preview] [Fix ✨] [×]
+            pillRow.Children.Add(_pillMicBtn);
+            pillRow.Children.Add(_pillReadAloudBtn);
             pillRow.Children.Add(_pillBadgeBorder);
             pillRow.Children.Add(_pillSummaryText);
-            pillRow.Children.Add(_pillMicBtn);
-            pillRow.Children.Add(_pillVoiceModeBtn);
-            pillRow.Children.Add(_pillVoiceLangBtn);
-            pillRow.Children.Add(_pillReadAloudBtn);
             pillRow.Children.Add(_pillQuickFixBtn);
             pillRow.Children.Add(pillCloseBtn);
             _pillRoot.Child = pillRow;
@@ -464,22 +523,12 @@ namespace GrammerV
             headerActions.HorizontalAlignment = HorizontalAlignment.Right;
 
             _cardMicBtn = CreateSmallButton("🎤", BgChip, EmeraldSoft);
-            _cardMicBtn.ToolTip = "Write with your voice (Groq Whisper / Deepgram) — click to start/stop recording";
-            _cardMicBtn.Margin = new Thickness(0, 0, 3, 0);
+            _cardMicBtn.ToolTip = "Voice Dictation (Alt+V) — click to start/stop recording";
+            _cardMicBtn.Margin = new Thickness(0, 0, 4, 0);
             _cardMicBtn.Click += OnMicButtonClicked;
 
-            _cardVoiceModeBtn = CreateSmallButton("Clean ✨", EmeraldDark, EmeraldSoft);
-            _cardVoiceModeBtn.ToolTip = "Toggle Voice Mode: 'Cleanup Voice' (cleans voice transcript without answering) vs 'Exact Voice' (exact words spoken)";
-            _cardVoiceModeBtn.Margin = new Thickness(0, 0, 2, 0);
-            _cardVoiceModeBtn.Click += OnVoiceModeToggleClicked;
-
-            _cardVoiceLangBtn = CreateSmallButton("EN+FA", BgChip, EmeraldSoft);
-            _cardVoiceLangBtn.ToolTip = "Cycle Voice Language: English + Persian Mixed (EN+FA) → Persian Only (FA) → English Only (EN)";
-            _cardVoiceLangBtn.Margin = new Thickness(0, 0, 3, 0);
-            _cardVoiceLangBtn.Click += OnVoiceLangCycleClicked;
-
             _cardReadAloudBtn = CreateSmallButton("🔊 Read", BgChip, EmeraldSoft);
-            _cardReadAloudBtn.ToolTip = "Read Aloud (Gemini / Deepgram Aura / Voice AI)";
+            _cardReadAloudBtn.ToolTip = "Read Aloud (Alt+R)";
             _cardReadAloudBtn.Margin = new Thickness(0, 0, 4, 0);
             _cardReadAloudBtn.Click += OnReadAloudClicked;
 
@@ -517,16 +566,15 @@ namespace GrammerV
             };
 
             Button helpBtn = CreateSmallButton("?", BgChip, EmeraldSoft);
-            helpBtn.ToolTip = "Help / راهنمای فارسی و انگلیسی";
+            helpBtn.ToolTip = "Open Help Guide (PDF) / راهنمای فارسی و انگلیسی";
             helpBtn.Margin = new Thickness(0, 0, 4, 0);
             helpBtn.Click += delegate
             {
-                if (_openHelpCallback != null) _openHelpCallback();
-                else if (_openStudioCallback != null) _openStudioCallback();
+                AppIconGenerator.OpenHelpPdf();
             };
 
             Button studioBtn = CreateSmallButton("⚙", BgChip, TextPrimary);
-            studioBtn.ToolTip = "Open FERDOWSI Studio";
+            studioBtn.ToolTip = "Open FERDOWSI Settings";
             studioBtn.Margin = new Thickness(0, 0, 4, 0);
             studioBtn.Click += delegate
             {
@@ -534,12 +582,10 @@ namespace GrammerV
             };
 
             Button collapseBtn = CreateSmallButton("—", BgChip, TextPrimary);
-            collapseBtn.ToolTip = "Collapse back to cursor pill";
+            collapseBtn.ToolTip = "Collapse back to cursor pill (Esc)";
             collapseBtn.Click += delegate { SetExpanded(false); };
 
             headerActions.Children.Add(_cardMicBtn);
-            headerActions.Children.Add(_cardVoiceModeBtn);
-            headerActions.Children.Add(_cardVoiceLangBtn);
             headerActions.Children.Add(_cardReadAloudBtn);
             headerActions.Children.Add(grabBtn);
             headerActions.Children.Add(_aiModeToggleBtn);
@@ -574,9 +620,12 @@ namespace GrammerV
             // Dynamic Tab Sub-options Host
             _tabContentHost = new StackPanel();
 
-            // Reword Tone Chips
+            // Reword Section: Preset Tone Chips + Custom Instruction Input Box
+            _rewordSectionPanel = new StackPanel();
+            _rewordSectionPanel.Margin = new Thickness(0, 0, 0, 6);
+
             _rewordChipsWrap = new WrapPanel();
-            _rewordChipsWrap.Margin = new Thickness(0, 0, 0, 6);
+            _rewordChipsWrap.Margin = new Thickness(0, 0, 0, 5);
             string[] tones = new string[] { "Fluent", "Formal", "Casual", "Concise", "Expand", "Persuasive" };
             for (int i = 0; i < tones.Length; i++)
             {
@@ -594,6 +643,57 @@ namespace GrammerV
                 RunRewordTransform();
             };
             _rewordChipsWrap.Children.Add(altVarBtn);
+            _rewordSectionPanel.Children.Add(_rewordChipsWrap);
+
+            // Custom Format / Reword Instruction Box
+            DockPanel customRewordRow = new DockPanel();
+            customRewordRow.Margin = new Thickness(0, 0, 0, 2);
+
+            _customRewordApplyBtn = CreateSmallButton("Apply ✨", Emerald, Brushes.White);
+            _customRewordApplyBtn.Padding = new Thickness(10, 5, 10, 5);
+            _customRewordApplyBtn.Margin = new Thickness(6, 0, 0, 0);
+            _customRewordApplyBtn.ToolTip = "Rewrite or format using your custom instruction";
+            _customRewordApplyBtn.Click += delegate
+            {
+                RunCustomRewordTransform();
+            };
+            DockPanel.SetDock(_customRewordApplyBtn, Dock.Right);
+            customRewordRow.Children.Add(_customRewordApplyBtn);
+
+            _customRewordInputBox = new TextBox
+            {
+                Background = BgSurface,
+                Foreground = TextMuted,
+                CaretBrush = EmeraldSoft,
+                BorderBrush = BorderSubtle,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 11.5,
+                Text = "Write custom format/style (e.g. formal email, 3 bullets, polite Persian)...",
+                ToolTip = "Type any custom format or style instruction and press Enter or click Apply ✨"
+            };
+            _customRewordInputBox.PreviewMouseLeftButtonDown += delegate
+            {
+                _allowInputBoxFocus = true;
+                NativeBridge.SetWindowActivable(_hwnd, true);
+                try { Activate(); } catch { }
+                if (_customRewordInputBox.Foreground == TextMuted)
+                {
+                    _customRewordInputBox.Text = string.Empty;
+                    _customRewordInputBox.Foreground = TextPrimary;
+                }
+                _customRewordInputBox.Focus();
+            };
+            _customRewordInputBox.KeyDown += delegate(object s, KeyEventArgs ke)
+            {
+                if (ke.Key == Key.Enter)
+                {
+                    ke.Handled = true;
+                    RunCustomRewordTransform();
+                }
+            };
+            customRewordRow.Children.Add(_customRewordInputBox);
+            _rewordSectionPanel.Children.Add(customRewordRow);
 
             // Format Mode Chips
             _formatChipsWrap = new WrapPanel();
@@ -688,7 +788,7 @@ namespace GrammerV
             dictScroll.Content = _dictContentStack;
             _dictBox.Child = dictScroll;
 
-            _tabContentHost.Children.Add(_rewordChipsWrap);
+            _tabContentHost.Children.Add(_rewordSectionPanel);
             _tabContentHost.Children.Add(_formatChipsWrap);
             _tabContentHost.Children.Add(diffBox);
             _tabContentHost.Children.Add(_issuesWrap);
@@ -949,86 +1049,9 @@ namespace GrammerV
             PositionAbovePhysicalPoint(_anchorCaretX, _anchorCaretY, _anchorCaretH, true);
         }
 
-        private void OnVoiceModeToggleClicked(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            _lastActivityUtc = DateTime.UtcNow;
-            string cur = (_engine.Settings.VoiceMode ?? "cleanup").ToLowerInvariant();
-            _engine.Settings.VoiceMode = (cur == "exact") ? "cleanup" : "exact";
-            _engine.Settings.Save();
-            _engine.ApplyFullAiConfiguration();
-            UpdateVoiceModeAppearance();
-            if (_engine.Settings.VoiceMode == "cleanup")
-            {
-                _pillSummaryText.Text = "🎤 Mode: Cleanup Voice ✨";
-                _cardTimingBadge.Text = "Voice Mode: Cleanup Voice (cleans fillers/grammar without answering)";
-            }
-            else
-            {
-                _pillSummaryText.Text = "🎤 Mode: Exact Voice 🎙";
-                _cardTimingBadge.Text = "Voice Mode: Exact Voice (writes exact spoken words verbatim)";
-            }
-        }
-
-        private void OnVoiceLangCycleClicked(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            _lastActivityUtc = DateTime.UtcNow;
-            string cur = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
-            string next;
-            string desc;
-            if (cur == "en_fa")
-            {
-                next = "fa";
-                desc = "Persian Only / فقط فارسی (FA)";
-            }
-            else if (cur == "fa")
-            {
-                next = "en";
-                desc = "English Only (EN)";
-            }
-            else
-            {
-                next = "en_fa";
-                desc = "English + Persian Mixed (EN+FA)";
-            }
-            _engine.Settings.DeepgramLanguage = next;
-            _engine.Settings.Save();
-            _engine.ApplyFullAiConfiguration();
-            UpdateVoiceModeAppearance();
-            _pillSummaryText.Text = "🎤 Lang: " + desc;
-            _cardTimingBadge.Text = "Voice Language: " + desc;
-        }
-
         private void UpdateVoiceModeAppearance()
         {
-            bool isExact = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase);
-            string vLang = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
-            string langBadge = (vLang == "fa") ? "FA" : ((vLang == "en") ? "EN" : "EN+FA");
-            if (_pillVoiceModeBtn != null)
-            {
-                _pillVoiceModeBtn.Content = isExact ? "Exact" : "Clean";
-                _pillVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
-                _pillVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
-            }
-            if (_pillVoiceLangBtn != null)
-            {
-                _pillVoiceLangBtn.Content = langBadge;
-                _pillVoiceLangBtn.Background = BgChip;
-                _pillVoiceLangBtn.Foreground = EmeraldSoft;
-            }
-            if (_cardVoiceModeBtn != null)
-            {
-                _cardVoiceModeBtn.Content = isExact ? "Exact 🎙" : "Clean ✨";
-                _cardVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
-                _cardVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
-            }
-            if (_cardVoiceLangBtn != null)
-            {
-                _cardVoiceLangBtn.Content = langBadge;
-                _cardVoiceLangBtn.Background = BgChip;
-                _cardVoiceLangBtn.Foreground = EmeraldSoft;
-            }
+            // Voice Output Mode and Voice Language are now configured in Main Settings.
         }
 
         public void UpdateShortWindowButtonsVisibility()
@@ -1036,17 +1059,6 @@ namespace GrammerV
             if (_pillMicBtn != null)
             {
                 _pillMicBtn.Visibility = _engine.Settings.ShowMicOnShortWindow ? Visibility.Visible : Visibility.Collapsed;
-            }
-            Visibility vmVis = (_engine.Settings.ShowMicOnShortWindow && _engine.Settings.ShowVoiceModeOnShortWindow)
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            if (_pillVoiceModeBtn != null)
-            {
-                _pillVoiceModeBtn.Visibility = vmVis;
-            }
-            if (_pillVoiceLangBtn != null)
-            {
-                _pillVoiceLangBtn.Visibility = vmVis;
             }
             if (_pillReadAloudBtn != null)
             {
@@ -1062,7 +1074,7 @@ namespace GrammerV
             if (_isReadingAloud)
             {
                 StopReadAloudPlayback();
-                _pillSummaryText.Text = "⏹ Stopped reading aloud";
+                _pillSummaryText.Visibility = Visibility.Collapsed;
                 _cardTimingBadge.Text = "⏹ Stopped Read Aloud playback";
                 return;
             }
@@ -1079,7 +1091,8 @@ namespace GrammerV
 
             if (string.IsNullOrEmpty(textToRead) || textToRead.Trim().Length == 0)
             {
-                _pillSummaryText.Text = "🔊 Select or type text first";
+                _pillSummaryText.Text = "Select text first";
+                _pillSummaryText.Visibility = Visibility.Visible;
                 _cardTimingBadge.Text = "🔊 Select or type text first to read aloud";
                 return;
             }
@@ -1089,7 +1102,8 @@ namespace GrammerV
             _pillReadAloudBtn.Background = EmeraldDark;
             _cardReadAloudBtn.Content = "⏳...";
             _cardReadAloudBtn.Background = EmeraldDark;
-            _pillSummaryText.Text = "🔊 Synthesizing speech...";
+            _pillSummaryText.Text = "Synthesizing...";
+            _pillSummaryText.Visibility = Visibility.Visible;
             _cardTimingBadge.Text = "🔊 Synthesizing speech audio...";
 
             string ttsWav = System.IO.Path.Combine(
@@ -1204,12 +1218,14 @@ namespace GrammerV
                     string modeTag = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase)
                         ? "Exact Voice"
                         : "Cleanup Voice";
-                    _pillSummaryText.Text = "🎙 Listening (" + modeTag + ")... click 🔴";
+                    _pillSummaryText.Text = "Listening...";
+                    _pillSummaryText.Visibility = Visibility.Visible;
                     _cardTimingBadge.Text = "🎙 Listening (" + modeTag + ")... speak now, then click 🔴 Stop";
                 }
                 else
                 {
-                    _pillSummaryText.Text = "Mic error (check microphone)";
+                    _pillSummaryText.Text = "Mic error";
+                    _pillSummaryText.Visibility = Visibility.Visible;
                     _cardTimingBadge.Text = "Could not open microphone input";
                 }
             }
@@ -1223,7 +1239,8 @@ namespace GrammerV
                 _cardMicBtn.Content = "⏳...";
                 _cardMicBtn.Background = BgChip;
                 _cardMicBtn.Foreground = EmeraldSoft;
-                _pillSummaryText.Text = "⏳ Transcribing voice...";
+                _pillSummaryText.Text = "Transcribing...";
+                _pillSummaryText.Visibility = Visibility.Visible;
                 _cardTimingBadge.Text = "⏳ Transcribing & processing voice...";
 
                 string wavPath = System.IO.Path.Combine(
@@ -1406,6 +1423,15 @@ namespace GrammerV
             _isExpanded = expanded;
             _isCloseMenuOpen = false;
             _lastActivityUtc = DateTime.UtcNow;
+            if (!expanded && _allowInputBoxFocus)
+            {
+                _allowInputBoxFocus = false;
+                NativeBridge.SetWindowActivable(_hwnd, false);
+                if (_activeTargetHwnd != 0)
+                {
+                    try { NativeBridge.SetForegroundWindow(new IntPtr(_activeTargetHwnd)); } catch { }
+                }
+            }
             if (_closeMenuRoot != null) _closeMenuRoot.Visibility = Visibility.Collapsed;
             _pillRoot.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
             _cardRoot.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
@@ -1429,6 +1455,11 @@ namespace GrammerV
 
         private void HideOverlay()
         {
+            if (_allowInputBoxFocus)
+            {
+                _allowInputBoxFocus = false;
+                NativeBridge.SetWindowActivable(_hwnd, false);
+            }
             _isExpanded = false;
             _isCloseMenuOpen = false;
             if (_closeMenuRoot != null) _closeMenuRoot.Visibility = Visibility.Collapsed;
@@ -1468,7 +1499,7 @@ namespace GrammerV
             bool isFormat = (_activeTab == "format");
             bool isDict = (_activeTab == "dictionary");
 
-            _rewordChipsWrap.Visibility = isReword ? Visibility.Visible : Visibility.Collapsed;
+            _rewordSectionPanel.Visibility = isReword ? Visibility.Visible : Visibility.Collapsed;
             _formatChipsWrap.Visibility = isFormat ? Visibility.Visible : Visibility.Collapsed;
 
             // child[2] is diffBox
@@ -1605,7 +1636,7 @@ namespace GrammerV
             if (NativeBridge.gv_poll_state(out st) == 0) return;
 
             bool focusChanged = false;
-            if (st.foreground_hwnd != 0 && st.foreground_hwnd != _lastForegroundHwnd)
+            if (st.foreground_hwnd != 0 && st.foreground_hwnd != _hwnd.ToInt64() && st.foreground_hwnd != _lastForegroundHwnd)
             {
                 _lastForegroundHwnd = st.foreground_hwnd;
                 _activeTargetHwnd = st.foreground_hwnd;
@@ -1927,14 +1958,15 @@ namespace GrammerV
 
         private void UpdatePillAppearance(AnalyzeResponse res)
         {
-            if (_isVoiceRecording || _voiceBusy) return;
+            if (_isVoiceRecording || _voiceBusy || _isReadingAloud) return;
 
             if (res == null || string.IsNullOrEmpty(_activeSourceText))
             {
                 _pillBadgeBorder.Background = Emerald;
                 _pillRoot.BorderBrush = Emerald;
-                _pillBadgeText.Text = "F";
-                _pillSummaryText.Text = "FERDOWSI · Ready";
+                _pillBadgeText.Text = "✓";
+                _pillSummaryText.Text = string.Empty;
+                _pillSummaryText.Visibility = Visibility.Collapsed;
                 _pillQuickFixBtn.Visibility = Visibility.Collapsed;
                 return;
             }
@@ -1945,6 +1977,7 @@ namespace GrammerV
                 _pillRoot.BorderBrush = Coral;
                 _pillBadgeText.Text = res.IssueCount.ToString();
                 _pillSummaryText.Text = res.QuickSummary;
+                _pillSummaryText.Visibility = Visibility.Visible;
                 _pillQuickFixBtn.Visibility = Visibility.Visible;
                 _tabCorrectBtn.Content = string.Format("✓ Correct ({0})", res.IssueCount);
             }
@@ -1953,7 +1986,8 @@ namespace GrammerV
                 _pillBadgeBorder.Background = Emerald;
                 _pillRoot.BorderBrush = Emerald;
                 _pillBadgeText.Text = "✓";
-                _pillSummaryText.Text = (_replaceMode == 0) ? "Reword · Format · Dict" : "Looks clean ✓";
+                _pillSummaryText.Text = string.Empty;
+                _pillSummaryText.Visibility = Visibility.Collapsed;
                 _pillQuickFixBtn.Visibility = Visibility.Collapsed;
                 _tabCorrectBtn.Content = "✓ Correct";
             }
@@ -2101,6 +2135,46 @@ namespace GrammerV
                 : FlowDirection.LeftToRight;
             _outputPreviewBox.Text = tr.Result;
             _cardTimingBadge.Text = string.Format("{0} · {1:0.0} ms", tr.Engine, tr.ElapsedMs);
+        }
+
+        private async void RunCustomRewordTransform()
+        {
+            if (string.IsNullOrEmpty(_activeSourceText)) return;
+            string customInstruction = (_customRewordInputBox != null && _customRewordInputBox.Foreground != TextMuted)
+                ? (_customRewordInputBox.Text ?? string.Empty).Trim()
+                : string.Empty;
+            if (string.IsNullOrEmpty(customInstruction))
+            {
+                RunRewordTransform();
+                return;
+            }
+
+            if (_allowInputBoxFocus)
+            {
+                _allowInputBoxFocus = false;
+                NativeBridge.SetWindowActivable(_hwnd, false);
+                if (_activeTargetHwnd != 0)
+                {
+                    try { NativeBridge.SetForegroundWindow(new IntPtr(_activeTargetHwnd)); } catch { }
+                }
+            }
+
+            _outputPreviewBox.Text = "Applying your custom format / instruction...";
+            _customRewordApplyBtn.IsEnabled = false;
+            try
+            {
+                TransformResponse tr = await _engine.RewordAsync(_activeSourceText, "custom", 0, customInstruction);
+                _currentOutputText = tr.Result;
+                _outputPreviewBox.FlowDirection = ContainsPersianText(_currentOutputText)
+                    ? FlowDirection.RightToLeft
+                    : FlowDirection.LeftToRight;
+                _outputPreviewBox.Text = tr.Result;
+                _cardTimingBadge.Text = string.Format("{0} · {1:0.0} ms", tr.Engine, tr.ElapsedMs);
+            }
+            finally
+            {
+                _customRewordApplyBtn.IsEnabled = true;
+            }
         }
 
         private async void RunFormatTransform()
@@ -2465,6 +2539,16 @@ namespace GrammerV
         private void ApplyReplacementToTarget()
         {
             if (string.IsNullOrEmpty(_currentOutputText)) return;
+
+            if (_allowInputBoxFocus)
+            {
+                _allowInputBoxFocus = false;
+                NativeBridge.SetWindowActivable(_hwnd, false);
+                if (_activeTargetHwnd != 0)
+                {
+                    try { NativeBridge.SetForegroundWindow(new IntPtr(_activeTargetHwnd)); } catch { }
+                }
+            }
 
             // Always stream direct Win32 KEYEVENTF_UNICODE events via grammerv_native.dll
             // (eliminates Edge/Chromium clipboard paste races AND broken React/DOM UIA SetValue calls)

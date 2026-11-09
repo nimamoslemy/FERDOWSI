@@ -93,7 +93,8 @@ namespace FerdowsiInstaller
                 "payload_AppxManifest.xml",
                 "payload_enable_phi_silica.ps1",
                 "payload_README.md",
-                "payload_LICENSE.txt"
+                "payload_LICENSE.txt",
+                "payload_FERDOWSI_Help_Guide.pdf"
             };
             Assembly asm = Assembly.GetExecutingAssembly();
             for (int i = 0; i < required.Length; i++)
@@ -280,19 +281,6 @@ namespace FerdowsiInstaller
                 FontSize = 20,
                 FontWeight = FontWeights.Bold
             });
-            titleCol.Children.Add(new TextBlock
-            {
-                Text = "Above-Cursor English, Persian & Finglish Writing Assistant & AI Dictionary",
-                Foreground = TextSub,
-                FontSize = 12
-            });
-            titleCol.Children.Add(new TextBlock
-            {
-                Text = "دستیار هوشمند نگارش انگلیسی، فارسی، فینگلیش و دیکشنری بالای مکان‌نما",
-                Foreground = EmeraldSoft,
-                FontSize = 12,
-                Margin = new Thickness(0, 2, 0, 0)
-            });
             headerRow.Children.Add(titleCol);
             root.Children.Add(headerRow);
 
@@ -383,16 +371,13 @@ namespace FerdowsiInstaller
             bottomBar.Children.Add(actionBtns);
 
             StackPanel creditCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            creditCol.Children.Add(new TextBlock
-            {
-                Text = "GitHub Page:",
-                Foreground = TextLight,
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold
-            });
-            TextBlock ghText = new TextBlock { FontSize = 11.5, Foreground = TextSub };
+            TextBlock ghText = new TextBlock { FontSize = 12, Foreground = TextSub, VerticalAlignment = VerticalAlignment.Center };
+            ghText.Inlines.Add(new Run("GitHub: "));
             Hyperlink hl = new Hyperlink(new Run("https://github.com/nimamoslemy"));
+            hl.NavigateUri = new Uri("https://github.com/nimamoslemy");
             hl.Foreground = EmeraldSoft;
+            hl.TextDecorations = TextDecorations.Underline;
+            hl.Cursor = Cursors.Hand;
             hl.Click += delegate
             {
                 try { Process.Start("https://github.com/nimamoslemy"); } catch { }
@@ -459,6 +444,7 @@ namespace FerdowsiInstaller
                 ExtractTo("payload_enable_phi_silica.ps1", Path.Combine(targetDir, "enable_phi_silica.ps1"), false);
                 ExtractTo("payload_README.md", Path.Combine(targetDir, "README.md"), false);
                 ExtractTo("payload_LICENSE.txt", Path.Combine(targetDir, "LICENSE.txt"), false);
+                ExtractTo("payload_FERDOWSI_Help_Guide.pdf", Path.Combine(targetDir, "FERDOWSI_Help_Guide.pdf"), false);
 
                 string uninstallerPath = Path.Combine(targetDir, "Uninstall_FERDOWSI.exe");
                 File.Copy(Assembly.GetExecutingAssembly().Location, uninstallerPath, true);

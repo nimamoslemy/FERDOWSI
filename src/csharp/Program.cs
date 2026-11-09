@@ -165,6 +165,11 @@ namespace GrammerV
                 {
                     ExtractResourceIfPresent("nlp_engine.py", Path.Combine(runtimeDir, "nlp_engine.py"), false);
                 }
+                string helpPdf = Path.Combine(exeDir, "FERDOWSI_Help_Guide.pdf");
+                if (!File.Exists(helpPdf) || (new FileInfo(helpPdf).Length < 10000))
+                {
+                    AppIconGenerator.EnsureHelpPdfFile(helpPdf);
+                }
             }
             catch { }
             return runtimeDir;
@@ -307,11 +312,7 @@ namespace GrammerV
 
         private static void ShowStudioHelp()
         {
-            ShowStudioWindow();
-            if (_studio != null)
-            {
-                _studio.ScrollToHelp();
-            }
+            AppIconGenerator.OpenHelpPdf();
         }
 
         private static void QuitApplication()
@@ -524,6 +525,19 @@ namespace GrammerV
             check("FERDOWSI Brand Flag Embedded Asset", flagSrc != null,
                 flagSrc != null ? string.Format("{0:0}x{1:0} RGBA loaded", flagSrc.Width, flagSrc.Height) : "missing");
 
+            TransformResponse customReword = _engine.Reword(
+                "finish the c++ dll, connect the python engine, and test the c# exe",
+                "custom", 0, "Format as a bullet list");
+            check("Custom Reword Format Instruction",
+                !string.IsNullOrEmpty(customReword.Result) && customReword.Result.Contains("•"),
+                string.Format("{0:0.0} ms ({1})", customReword.ElapsedMs, customReword.Engine));
+
+            string pdfPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FERDOWSI_Help_Guide.pdf");
+            AppIconGenerator.EnsureHelpPdfFile(pdfPath);
+            bool pdfOk = File.Exists(pdfPath) && (new FileInfo(pdfPath).Length > 10000);
+            check("Bilingual Help Guide PDF Generated (FERDOWSI_Help_Guide.pdf)", pdfOk,
+                pdfOk ? (pdfPath + " (" + (new FileInfo(pdfPath).Length / 1024) + " KB)") : "missing");
+
             try
             {
                 FloatingOverlay testOverlay = new FloatingOverlay(_engine, null);
@@ -535,15 +549,14 @@ namespace GrammerV
                 testStudio.Left = -3000;
                 testStudio.Top = -3000;
                 testStudio.Show();
-                testStudio.ScrollToHelp();
                 bool studioOk = testStudio.Hwnd != IntPtr.Zero && testStudio.Title.Contains("FERDOWSI");
                 testStudio.AllowClose();
                 testStudio.Close();
 
                 testOverlay.Close();
-                check("WPF Non-Activating Above-Cursor FERDOWSI Overlay & Studio (Flag + Help + Credits)",
+                check("WPF Non-Activating Above-Cursor FERDOWSI Overlay & Studio (Bilingual + GitHub Link)",
                     hasHwnd && titleOk && studioOk,
-                    "Overlay & StudioWindow (Help + Author Footer) created & verified cleanly");
+                    "Overlay & StudioWindow created & verified cleanly");
             }
             catch (Exception ex)
             {

@@ -31,6 +31,7 @@ namespace GrammerV
         public bool ShowMicOnShortWindow { get; set; }
         public bool ShowVoiceModeOnShortWindow { get; set; }
         public bool ShowReadAloudOnShortWindow { get; set; }
+        public string UiLanguage { get; set; } // "en" or "fa"
 
         public GrammerVSettings()
         {
@@ -52,8 +53,9 @@ namespace GrammerV
             FloatingEnabled = true;
             ShowOnTypingAndFocus = true;
             ShowMicOnShortWindow = true;
-            ShowVoiceModeOnShortWindow = true;
+            ShowVoiceModeOnShortWindow = false;
             ShowReadAloudOnShortWindow = true;
+            UiLanguage = "en";
         }
 
         private static string NormalizeModelName(string mdl)
@@ -113,6 +115,7 @@ namespace GrammerV
                             if (string.IsNullOrEmpty(loaded.VoiceMode)) loaded.VoiceMode = "cleanup";
                             if (string.IsNullOrEmpty(loaded.TtsProvider)) loaded.TtsProvider = "auto";
                             if (string.IsNullOrEmpty(loaded.AiProvider)) loaded.AiProvider = "auto";
+                            loaded.UiLanguage = (loaded.UiLanguage != null && loaded.UiLanguage.Trim().ToLowerInvariant() == "fa") ? "fa" : "en";
                             if (string.IsNullOrEmpty(loaded.GoogleApiKey))
                             {
                                 loaded.GoogleApiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
@@ -858,7 +861,12 @@ namespace GrammerV
 
         public Task<TransformResponse> RewordAsync(string text, string mode, int variant)
         {
-            return Task.Run(delegate { return Reword(text, mode, variant); });
+            return RewordAsync(text, mode, variant, string.Empty);
+        }
+
+        public Task<TransformResponse> RewordAsync(string text, string mode, int variant, string customPrompt)
+        {
+            return Task.Run(delegate { return Reword(text, mode, variant, customPrompt); });
         }
 
         public Task<TransformResponse> FormatAsync(string text, string mode)
@@ -942,6 +950,11 @@ namespace GrammerV
 
         public TransformResponse Reword(string text, string mode, int variant)
         {
+            return Reword(text, mode, variant, string.Empty);
+        }
+
+        public TransformResponse Reword(string text, string mode, int variant, string customPrompt)
+        {
             Stopwatch sw = Stopwatch.StartNew();
             if (string.IsNullOrEmpty(text)) return new TransformResponse();
 
@@ -952,6 +965,7 @@ namespace GrammerV
                 req["text"] = text;
                 req["mode"] = mode;
                 req["variant"] = variant;
+                req["custom_prompt"] = customPrompt ?? string.Empty;
                 req["use_llm"] = (Settings.AiProvider != "offline");
                 Dictionary<string, object> resp = SendRaw(req);
                 if (resp != null && GetBool(resp, "ok"))

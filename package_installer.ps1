@@ -39,6 +39,7 @@ $manifestFile = Join-Path $ProjectRoot "AppxManifest.xml"
 $phiScript    = Join-Path $ProjectRoot "enable_phi_silica.ps1"
 $readmeFile   = Join-Path $ProjectRoot "README.md"
 $licenseFile  = Join-Path $ProjectRoot "LICENSE.txt"
+$pdfFile      = Join-Path $ProjectRoot "FERDOWSI_Help_Guide.pdf"
 $setupCs      = Join-Path $ProjectRoot "src\installer\FerdowsiSetup.cs"
 
 # 1. Compile Native 64-bit Windows Setup Wizard (FERDOWSI_Setup_v2.0.0.exe) with asInvoker Manifest & GZip Payload (zero PE-in-PE heuristic popups)
@@ -75,6 +76,7 @@ $dllGz = Compress-ToGzipTemp $dllFile "payload_grammerv_native.dll.gz"
     /resource:"$phiScript,payload_enable_phi_silica.ps1" `
     /resource:"$readmeFile,payload_README.md" `
     /resource:"$licenseFile,payload_LICENSE.txt" `
+    /resource:"$pdfFile,payload_FERDOWSI_Help_Guide.pdf" `
     /r:"$fw\System.dll" `
     /r:"$fw\System.Core.dll" `
     /r:"$fw\System.Drawing.dll" `
@@ -91,7 +93,24 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to compile FERDOWSI_Setup_v2.0.0.exe!" 
 # Verify embedded installer resources
 $verifyProc = Start-Process -FilePath $setupOut -ArgumentList "--verify-package" -Wait -PassThru -NoNewWindow
 if ($verifyProc.ExitCode -ne 0) { throw "Installer payload verification failed (exit code $($verifyProc.ExitCode))!" }
-Write-Host "[1/3] Built & verified GUI Installer: $setupOut" -ForegroundColor Green
+
+# Package Setup Wizard inside FERDOWSI_Installer_v2.0.0_x64.zip and remove raw .exe to avoid browser download blocks
+$instStageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ferdowsi_inst_stage_" + [Guid]::NewGuid().ToString("N"))
+$instFolder   = Join-Path $instStageDir "FERDOWSI_Installer"
+New-Item -ItemType Directory -Force -Path $instFolder | Out-Null
+Copy-Item $setupOut    (Join-Path $instFolder "FERDOWSI_Setup_v2.0.0.exe") -Force
+Copy-Item $licenseFile (Join-Path $instFolder "LICENSE.txt") -Force
+if (Test-Path $pdfFile) { Copy-Item $pdfFile (Join-Path $instFolder "FERDOWSI_Help_Guide.pdf") -Force }
+
+$installBat = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"Get-ChildItem -Path '%~dp0' -Recurse | Unblock-File -ErrorAction SilentlyContinue`"`r`nstart `"`" `"%~dp0FERDOWSI_Setup_v2.0.0.exe`"`r`n"
+[System.IO.File]::WriteAllText((Join-Path $instFolder "Install_FERDOWSI.bat"), $installBat, [System.Text.Encoding]::ASCII)
+
+$installerZipOut = Join-Path $OutputDir "FERDOWSI_Installer_v2.0.0_x64.zip"
+Compress-Archive -Path $instFolder -DestinationPath $installerZipOut -CompressionLevel Optimal -Force
+Copy-Item $installerZipOut (Join-Path $ProjectRoot "FERDOWSI_Installer_v2.0.0_x64.zip") -Force
+Remove-Item -Path $instStageDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $setupOut -Force -ErrorAction SilentlyContinue
+Write-Host "[1/3] Built & packaged ZIP Installer (zero raw .exe): $installerZipOut" -ForegroundColor Green
 
 # 2. Build Clean Portable ZIP Archive (FERDOWSI_Portable_v2.0.0_x64.zip)
 $stageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ferdowsi_stage_" + [Guid]::NewGuid().ToString("N"))
@@ -110,6 +129,7 @@ Copy-Item $manifestFile (Join-Path $appFolder "AppxManifest.xml") -Force
 Copy-Item $phiScript    (Join-Path $appFolder "enable_phi_silica.ps1") -Force
 Copy-Item $readmeFile   (Join-Path $appFolder "README.md") -Force
 Copy-Item $licenseFile  (Join-Path $appFolder "LICENSE.txt") -Force
+if (Test-Path $pdfFile) { Copy-Item $pdfFile (Join-Path $appFolder "FERDOWSI_Help_Guide.pdf") -Force }
 
 $launchBat = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"Get-ChildItem -Path '%~dp0' -Recurse | Unblock-File -ErrorAction SilentlyContinue`"`r`nstart `"`" `"%~dp0FERDOWSI.exe`"`r`n"
 [System.IO.File]::WriteAllText((Join-Path $appFolder "Launch_FERDOWSI.bat"), $launchBat, [System.Text.Encoding]::ASCII)
@@ -119,8 +139,9 @@ Compress-Archive -Path $appFolder -DestinationPath $zipOut -CompressionLevel Opt
 Remove-Item -Path $stageDir -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "[2/3] Built clean Portable ZIP: $zipOut" -ForegroundColor Green
 
-# 3. Copy License, Write Bilingual Release Guide & Generate SHA256 Checksums
+# 3. Copy License, Help PDF, Write Bilingual Release Guide & Generate SHA256 Checksums
 Copy-Item $licenseFile (Join-Path $OutputDir "LICENSE.txt") -Force
+if (Test-Path $pdfFile) { Copy-Item $pdfFile (Join-Path $OutputDir "FERDOWSI_Help_Guide.pdf") -Force }
 
 $installGuide = @"
 # FERDOWSI v2 (v2.0.0) — Official Installation Package (Windows 10 / 11 x64)
@@ -129,29 +150,28 @@ GitHub: [https://github.com/nimamoslemy](https://github.com/nimamoslemy)
 
 ---
 
-## Included Release Files
-1. **`FERDOWSI_Setup_v2.0.0.exe`** — Interactive Windows Setup Wizard (creates Desktop & Start Menu shortcuts, optional Windows Startup tray launch, and uninstaller in Windows Installed Apps).
-2. **`FERDOWSI_Portable_v2.0.0_x64.zip`** — Zero-install Portable Edition (unzip anywhere and run `FERDOWSI.exe`).
-3. **`SHA256SUMS.txt`** — SHA-256 integrity checksums for GitHub Releases.
-4. **`LICENSE.txt`** — MIT Open-Source License.
+## Included Release Files (Packaged as ZIPs to Avoid Browser `.exe` Download Blocks)
+1. **`FERDOWSI_Installer_v2.0.0_x64.zip`** — Interactive Windows Setup Wizard package (unzip and run `Install_FERDOWSI.bat` or `FERDOWSI_Setup_v2.0.0.exe`).
+2. **`FERDOWSI_Portable_v2.0.0_x64.zip`** — Zero-install Portable Edition (unzip anywhere and run `Launch_FERDOWSI.bat` or `FERDOWSI.exe`).
+3. **`FERDOWSI_Help_Guide.pdf`** — Bilingual (English & Persian) User Manual & API Setup Guide.
+4. **`SHA256SUMS.txt`** — SHA-256 integrity checksums for GitHub Releases.
+5. **`LICENSE.txt`** — MIT Open-Source License.
 
 ---
 
 ## Quick Start (English)
-1. Run **`FERDOWSI_Setup_v2.0.0.exe`** and click **Install FERDOWSI**.
-2. Once **FERDOWSI v2** opens, type anywhere in Windows (Edge, Chrome, Word, Notepad, Telegram, VS Code) or press **`Alt + G`** (`Ctrl + Shift + G`) to summon the assistant right above your cursor.
-3. **🎤 Voice Dictation (Groq Whisper & Deepgram) + `Cleanup Voice` vs `Exact Voice`**:
-   - Click **`🎤`** on the short floating window to speak. Choose **`Cleanup Voice`** (removes fillers/stutters and fixes grammar while strictly cleaning your speech — never answering or responding to your voice) or **`Exact Voice`** (verbatim transcript).
-4. **🔊 Read Aloud (`Gemini`, `Deepgram`, `Voice AI`)**:
-   - Click **`🔊`** on the short floating window or expanded card to read text aloud.
-5. **Short Window Customization**:
-   - You can hide/disable the `🎤`, `Clean/Exact`, or `🔊` buttons on the short cursor window anytime in **FERDOWSI v2 Studio Settings**.
+1. Download **`FERDOWSI_Installer_v2.0.0_x64.zip`**, extract it, and double-click **`Install_FERDOWSI.bat`** (or `FERDOWSI_Setup_v2.0.0.exe`).
+2. Once **FERDOWSI v2** opens, type anywhere in Windows or use the global shortcuts:
+   - **`Alt + G`**: Summon / Toggle FERDOWSI Card above cursor
+   - **`Alt + V`**: Start / Stop Voice Dictation (`🎤`)
+   - **`Alt + R`**: Read Aloud (`🔊`) / Stop Reading
+   - **`Alt + Q`**: Instant Quick-Fix (`Fix ✨`) of the current sentence
 "@
 [System.IO.File]::WriteAllText((Join-Path $OutputDir "README_INSTALL.md"), $installGuide, [System.Text.Encoding]::UTF8)
 
-$setupHash = (Get-FileHash -Path $setupOut -Algorithm SHA256).Hash.ToLowerInvariant()
-$zipHash   = (Get-FileHash -Path $zipOut   -Algorithm SHA256).Hash.ToLowerInvariant()
-$sumsText  = "$setupHash  FERDOWSI_Setup_v2.0.0.exe`r`n$zipHash  FERDOWSI_Portable_v2.0.0_x64.zip`r`n"
+$instZipHash = (Get-FileHash -Path $installerZipOut -Algorithm SHA256).Hash.ToLowerInvariant()
+$zipHash     = (Get-FileHash -Path $zipOut          -Algorithm SHA256).Hash.ToLowerInvariant()
+$sumsText    = "$instZipHash  FERDOWSI_Installer_v2.0.0_x64.zip`r`n$zipHash  FERDOWSI_Portable_v2.0.0_x64.zip`r`n"
 [System.IO.File]::WriteAllText((Join-Path $OutputDir "SHA256SUMS.txt"), $sumsText, [System.Text.Encoding]::ASCII)
 
 Write-Host "[3/3] Generated README_INSTALL.md, LICENSE.txt, and SHA256SUMS.txt" -ForegroundColor Green

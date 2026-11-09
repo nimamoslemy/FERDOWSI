@@ -12,8 +12,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Debug symbols & temp build artifacts
+# Debug symbols, raw executables & temp build artifacts (use ZIP installer instead of raw .exe)
 *.pdb
 *.obj
 *.exp
 *.lib
+*.exe
+*.dll

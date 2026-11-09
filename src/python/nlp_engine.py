@@ -2639,13 +2639,14 @@ def try_google_gemini_analyze(text: str, force_lang: str = "") -> Optional[Dict[
         return None
 
 
-def try_google_gemini_reword(text: str, mode: str, variant: int) -> Optional[Dict[str, Any]]:
+def try_google_gemini_reword(text: str, mode: str, variant: int, custom_prompt: str = "") -> Optional[Dict[str, Any]]:
     if not google_gemini_Enabled() or not text or not text.strip():
         return None
     prov = ENGINE_CONFIG.get("ai_provider", "auto")
     mdl_tag = ENGINE_CONFIG.get("deepseek_model", DEFAULT_DEEPSEEK_MODEL) if prov == "deepseek" else ENGINE_CONFIG.get("google_model", DEFAULT_GEMINI_MODEL)
     lang_mode = detect_language_mode(text)
-    cache_key = ("reword", prov, mdl_tag, lang_mode, mode, variant > 0, text)
+    custom_clean = (custom_prompt or "").strip()
+    cache_key = ("reword", prov, mdl_tag, lang_mode, mode, custom_clean, variant > 0, text)
     if cache_key in _GEMINI_CACHE:
         variants, cached_label = _GEMINI_CACHE[cache_key]
         return {
@@ -2655,6 +2656,36 @@ def try_google_gemini_reword(text: str, mode: str, variant: int) -> Optional[Dic
             "variants": variants,
             "engine": cached_label,
         }
+
+    # Custom user instruction path (e.g., "make it formal email format", "translate to polite Persian", "3 bullet points")
+    if custom_clean:
+        prompt = (
+            "You are FERDOWSI, an expert bilingual English and Persian (فارسی) writing and formatting assistant.\n"
+            f"User's custom instruction / format request: {custom_clean}\n"
+            "Apply the user's instruction to the input text below. Fix any spelling, grammar, or Persian نیم‌فاصله ('\\u200c') errors. "
+            "Use standard Persian 'ک'/'ی' when outputting Persian. "
+            "Output ONLY the final rewritten/formatted text with no surrounding quotes, no markdown code fences, and no extra commentary.\n\n"
+            f"Input Text:\n{text}"
+        )
+        raw, err, engine_label = call_cloud_ai(prompt, expect_json=False, timeout=6.5, max_tokens=480)
+        if not err and raw:
+            clean_out = raw.strip()
+            if clean_out.startswith("```"):
+                clean_out = re.sub(r"^```[a-zA-Z]*\s*", "", clean_out).rstrip("`").strip()
+            if "\n" not in clean_out:
+                clean_out = clean_out.strip("\"'")
+            if lang_mode in ("fa", "finglish") or PERSIAN_SCRIPT_RE.search(clean_out):
+                clean_out = clean_out.replace("\u0643", "ک").replace("\u064A", "ی").replace("\u0649", "ی")
+            if clean_out:
+                variants = [clean_out]
+                _GEMINI_CACHE[cache_key] = (variants, engine_label)
+                return {
+                    "ok": True,
+                    "mode": "custom",
+                    "result": clean_out,
+                    "variants": variants,
+                    "engine": engine_label,
+                }
 
     # Fast path for initial tone click (variant == 0): direct single-text output in <0.8s!
     if variant == 0:
@@ -3346,18 +3377,19 @@ def _ensure_terminal_punct(s: str, default: str = ".") -> str:
     return s
 
 
-def reword_text(text: str, mode: str = "fluent", variant: int = 0, use_llm: bool = False) -> Dict[str, Any]:
+def reword_text(text: str, mode: str = "fluent", variant: int = 0, use_llm: bool = False, custom_prompt: str = "") -> Dict[str, Any]:
     if not text or not text.strip():
         return {"ok": True, "mode": mode, "result": text, "variants": [text], "engine": "Python+C++"}
 
     mode = (mode or "fluent").lower().strip()
+    custom_clean = (custom_prompt or "").strip()
     prov = ENGINE_CONFIG.get("ai_provider", "auto")
     lang_mode = detect_language_mode(text)
 
-    if (use_llm or prov in ("ai_only", "google", "deepseek")) and prov != "offline":
-        # Priority 1: Cloud AI (Google Gemini / DeepSeek — supports English, Persian & Finglish->Persian)
+    if (use_llm or prov in ("ai_only", "google", "deepseek") or bool(custom_clean)) and prov != "offline":
+        # Priority 1: Cloud AI (Google Gemini / DeepSeek — supports English, Persian, Finglish & Custom Format Instructions)
         if prov in ("ai_only", "auto", "google", "deepseek") and google_gemini_Enabled():
-            gem_res = try_google_gemini_reword(text, mode, variant)
+            gem_res = try_google_gemini_reword(text, mode, variant, custom_prompt=custom_clean)
             if gem_res:
                 return gem_res
 
@@ -3372,12 +3404,13 @@ def reword_text(text: str, mode: str = "fluent", variant: int = 0, use_llm: bool
                 "persuasive": "Rewrite this text in a confident, persuasive, action-oriented tone.",
             }
             tone_map = {"fluent": 1, "casual": 2, "concise": 3, "formal": 4, "expand": 0, "persuasive": 0}
-            llm_res = try_local_llm_rewrite(text, prompts.get(mode, prompts["fluent"]), tone_map.get(mode, 1))
+            chosen_inst = custom_clean if custom_clean else prompts.get(mode, prompts["fluent"])
+            llm_res = try_local_llm_rewrite(text, chosen_inst, tone_map.get(mode, 1) if not custom_clean else 0)
             if llm_res:
                 rewritten, engine_label = llm_res
                 return {
                     "ok": True,
-                    "mode": mode,
+                    "mode": "custom" if custom_clean else mode,
                     "result": rewritten,
                     "variants": [rewritten],
                     "engine": engine_label,
@@ -3386,11 +3419,46 @@ def reword_text(text: str, mode: str = "fluent", variant: int = 0, use_llm: bool
         if prov == "ai_only":
             return {
                 "ok": True,
-                "mode": mode,
+                "mode": "custom" if custom_clean else mode,
                 "result": text,
                 "variants": [text],
                 "engine": "AI Only (Add Google Gemini or DeepSeek API Key in ⚙ Settings)",
             }
+
+    # Offline fallback for custom instructions (maps common format/tone keywords when offline)
+    if custom_clean:
+        cp_low = custom_clean.lower()
+        if any(k in cp_low for k in ("email", "ایمیل", "نامه")):
+            fmt_out = format_text(text, "email_format")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (Custom Email)"}
+        if any(k in cp_low for k in ("bullet", "بولت", "پوینت", "list", "لیست", "فهرست")):
+            fmt_out = format_text(text, "bullet_list")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (Custom List)"}
+        if any(k in cp_low for k in ("number", "شماره")):
+            fmt_out = format_text(text, "numbered_list")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (Numbered List)"}
+        if any(k in cp_low for k in ("title", "تیتر", "عنوان")):
+            fmt_out = format_text(text, "title_case")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (Title Case)"}
+        if any(k in cp_low for k in ("upper", "capital", "بزرگ")):
+            fmt_out = format_text(text, "upper_case")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (UPPERCASE)"}
+        if any(k in cp_low for k in ("lower", "کوچک")):
+            fmt_out = format_text(text, "lower_case")["result"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (lowercase)"}
+        if any(k in cp_low for k in ("persian", "farsi", "فارسی")) and not PERSIAN_SCRIPT_RE.search(text):
+            fmt_out = convert_finglish_to_persian(text)["corrected"]
+            return {"ok": True, "mode": "custom", "result": fmt_out, "variants": [fmt_out], "engine": "Python+C++ (Finglish → فارسی)"}
+        if any(k in cp_low for k in ("formal", "official", "polite", "academic", "رسمی", "اداری", "محترمانه")):
+            mode = "formal"
+        elif any(k in cp_low for k in ("casual", "friendly", "صمیمی", "محاوره", "دوستانه")):
+            mode = "casual"
+        elif any(k in cp_low for k in ("short", "concise", "brief", "summary", "summarize", "خلاصه", "کوتاه")):
+            mode = "concise"
+        elif any(k in cp_low for k in ("expand", "longer", "detail", "بسط", "کامل", "توضیح")):
+            mode = "expand"
+        elif any(k in cp_low for k in ("persuasive", "strong", "متقاعد", "تأثیرگذار")):
+            mode = "persuasive"
 
     base = analyze_and_correct(text)["corrected"].strip()
     if lang_mode in ("fa", "finglish") or PERSIAN_SCRIPT_RE.search(base):
@@ -3864,6 +3932,7 @@ def handle_request(req: Dict[str, Any]) -> Dict[str, Any]:
             mode=req.get("mode", "fluent"),
             variant=int(req.get("variant", 0)),
             use_llm=bool(req.get("use_llm", False)),
+            custom_prompt=str(req.get("custom_prompt") or "").strip(),
         )
         resp["id"] = req_id
         resp["elapsed_ms"] = round((time.perf_counter() - t0) * 1000.0, 2)

@@ -6,23 +6,31 @@ GitHub: [https://github.com/nimamoslemy](https://github.com/nimamoslemy)
 
 ---
 
+## Download & Installation (Packaged as `.zip` — Zero Browser `.exe` Warnings)
+- **`FERDOWSI_Installer_v2.0.0_x64.zip`**: Interactive Windows Setup Wizard package. Extract the ZIP and run **`Install_FERDOWSI.bat`** (or `FERDOWSI_Setup_v2.0.0.exe`).
+- **`FERDOWSI_Portable_v2.0.0_x64.zip`**: Zero-install Portable Edition. Extract anywhere and run **`Launch_FERDOWSI.bat`** (or `FERDOWSI.exe`).
+- **`FERDOWSI_Help_Guide.pdf`**: Bilingual (English & Persian) User Manual & API Setup Guide.
+
+---
+
+## Global Windows Shortcuts
+- **`Alt + G`** (`Ctrl + Shift + G`): Summon / Toggle the FERDOWSI Card above your cursor
+- **`Alt + V`** (`Ctrl + Shift + V`): Start / Stop **Voice Dictation (`🎤`)** anywhere in Windows
+- **`Alt + R`** (`Ctrl + Shift + R`): **Read Aloud (`🔊`)** / Stop Reading selected or current text
+- **`Alt + Q`** (`Ctrl + Shift + F`): **Instant Quick-Fix (`Fix ✨`)** of the current sentence at cursor
+- **`Esc`**: Close the expanded card or stop active voice recording / reading aloud
+
+---
+
 ## What's New in FERDOWSI v2 (`v2.0.0`)
-- **🎤 Groq Whisper + Deepgram Voice Dictation Above Your Cursor**:
-  - Choose **Groq Whisper (`whisper-large-v3-turbo`)**, **Deepgram (`Nova-2`)**, or **Auto (`Groq → Deepgram`)** to dictate in English or Persian directly into any text box.
-- **✨ `Cleanup Voice` vs `Exact Voice` Output Modes**:
-  - **`Cleanup Voice` (`Clean` badge)**: Removes spoken fillers (`um`, `uh`, `er`, `یعنی`), stutters, and word repetitions, and fixes grammar/punctuation — while **strictly cleaning your spoken transcript and NEVER answering questions, replying conversationally, or executing spoken commands**.
-  - **`Exact Voice` (`Exact` badge)**: Inserts the verbatim words returned by the speech-to-text engine without modification.
-- **🔊 Read Aloud (`Gemini`, `Deepgram Aura`, `Voice AI` & Offline SAPI)**:
-  - Click **`🔊`** on the short floating window or expanded card to read the current or corrected text aloud using **Google Gemini Audio TTS**, **Deepgram Aura TTS**, **Voice AI TTS**, or Windows offline speech synthesis.
-- **🎛 Hide / Disable Icons on the Short Cursor Window**:
-  - In **FERDOWSI v2 Studio Settings**, you can individually uncheck and hide:
-    - `Show Microphone (🎤) dictation icon on short window above cursor`
-    - `Show Voice Mode (Clean / Exact) toggle on short window above cursor`
-    - `Show Read Aloud (🔊) speaker icon on short window above cursor`
-- **🔒 Smart Browser & Password Protection**:
-  - Ignores read-only webpage views and top-left `(0,0)` browser dummy coordinates so the floating pill only appears when a real editable text input is focused.
-  - Custom dark borderless close/snooze menu (`10 min` / `30 min` / `1 hr`) with zero white system menu gutters.
-  - Automatically detects password fields and wipes its typing buffer immediately.
+- **🎤 Groq Whisper + Deepgram Voice Dictation (`[🎤] [🔊] [Red Error Count]` on Short Window)**:
+  - Streamlined short cursor window with **`🎤`** (Microphone) and **`🔊`** (Read Aloud) placed to the left of the red error count badge, plus **`Fix ✨`** and **`×`** (10 min / 30 min / 1 hr pause menu).
+- **✨ `Cleanup Voice` vs `Exact Voice` & Voice Language in Main Settings**:
+  - Configure **`Cleanup Voice`** (cleans spoken fillers and grammar without ever answering or replying to your voice) vs **`Exact Voice`** (verbatim transcript), plus **Voice Language (`English + Persian Mixed`, `Persian / فارسی`, `English`)**, directly in **Main Settings**.
+- **✍️ Custom Format / Reword Instruction Box in `✨ Reword`**:
+  - Write any custom format or style instruction inside the **`✨ Reword`** tab (e.g., *"Rewrite as a polite email with 3 bullet points"*) and click **`Apply ✨`**.
+- **🌐 Bilingual Settings UI (English & Persian `فارسی`) + PDF User Guide**:
+  - Switch the Settings interface language between **English** and **Persian (`فارسی`)** anytime, and open **`FERDOWSI_Help_Guide.pdf`** for full bilingual documentation.
 
 ---
 

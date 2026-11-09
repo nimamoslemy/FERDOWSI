@@ -156,6 +156,15 @@ Remove-Item $dllGz -Force -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) { throw "C# FERDOWSI.exe compilation failed!" }
 Write-Host ("[4/4] Compiled 64-bit standalone FERDOWSI.exe in {0} ms" -f $stepSw.ElapsedMilliseconds) -ForegroundColor Green
 
+# Run self-test to generate fresh FERDOWSI_Help_Guide.pdf and verify build integrity
+$selfTestReport = Join-Path ([System.IO.Path]::GetTempPath()) "ferdowsi_build_selftest.txt"
+& $exeOut "--self-test" $selfTestReport
+if ($LASTEXITCODE -ne 0) {
+    if (Test-Path $selfTestReport) { Get-Content $selfTestReport | Write-Host -ForegroundColor Red }
+    throw "FERDOWSI.exe --self-test failed!"
+}
+$pdfPath = Join-Path $ProjectRoot "FERDOWSI_Help_Guide.pdf"
+
 # Sync installed copy in %LOCALAPPDATA%\Programs\FERDOWSI and %LOCALAPPDATA%\FERDOWSI\runtime if present
 $installedDir = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "Programs\FERDOWSI"
 if (Test-Path $installedDir) {
@@ -167,6 +176,7 @@ if (Test-Path $installedDir) {
     Copy-Item $flagAsset (Join-Path $installedDir "assets\ferdowsi_flag.png") -Force
     Copy-Item $icoPath   (Join-Path $installedDir "FERDOWSI.ico") -Force
     Copy-Item $pngPath   (Join-Path $installedDir "FERDOWSI.png") -Force
+    if (Test-Path $pdfPath) { Copy-Item $pdfPath (Join-Path $installedDir "FERDOWSI_Help_Guide.pdf") -Force }
     Write-Host "[Sync] Updated installed copy at $installedDir" -ForegroundColor Green
 }
 $runtimeCacheDir = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "FERDOWSI\runtime"

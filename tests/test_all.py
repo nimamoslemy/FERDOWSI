@@ -208,6 +208,17 @@ def main() -> int:
         assert rw["ok"] and rw["result"] and "teh" not in rw["result"].lower()
         print(f"[PASS] Reword [{tone:10s}] ({rw['elapsed_ms']:.2f} ms): {rw['result']}")
 
+    custom_rw = nlp_engine.handle_request({
+        "id": 201,
+        "action": "reword",
+        "mode": "custom",
+        "custom_prompt": "Format as a bullet list",
+        "text": "build the c++ dll, connect the python engine, and run the c# exe",
+        "use_llm": False,
+    })
+    assert custom_rw["ok"] and "•" in custom_rw["result"], f"Unexpected custom reword: {custom_rw}"
+    print(f"[PASS] Custom Format/Reword Instruction ({custom_rw['elapsed_ms']:.2f} ms): {custom_rw['result'].splitlines()[0]}")
+
     for fmt in ("sentence_case", "title_case", "upper_case", "lower_case", "bullet_list", "numbered_list", "email_format", "snake_case", "camel_case"):
         fm = nlp_engine.handle_request({
             "id": 3,
