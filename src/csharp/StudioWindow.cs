@@ -631,7 +631,7 @@ namespace GrammerV
             StackPanel dgLangCol = new StackPanel();
             dgLangCol.Children.Add(new TextBlock
             {
-                Text = "Voice Dictation Language", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
+                Text = "Voice Language (Only Persian & English)", Foreground = TextLight, FontSize = 11.5, FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             _cmbDeepgramLang = new ComboBox
@@ -641,10 +641,19 @@ namespace GrammerV
                 FontSize = 12.5,
                 Padding = new Thickness(8, 5, 8, 5)
             };
-            AddDeepgramLangItem("multi", "Multi-Language Auto (English & International)");
-            AddDeepgramLangItem("en", "English (en-US · Nova-2 Smart Punctuation)");
-            AddDeepgramLangItem("fa", "Persian / فارسی (fa)");
-            SelectDeepgramLangInCombo(_engine.Settings.DeepgramLanguage);
+            AddDeepgramLangItem("en_fa", "🌐 English + Persian Mixed (انگلیسی و فارسی ترکیبی)");
+            AddDeepgramLangItem("fa", "🇮🇷 Persian Only / فقط فارسی (fa)");
+            AddDeepgramLangItem("en", "🇺🇸 English Only / فقط انگلیسی (en)");
+            SelectDeepgramLangInCombo(GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage));
+            _cmbDeepgramLang.SelectionChanged += delegate
+            {
+                string selLang = GetSelectedDeepgramLang();
+                _engine.Settings.DeepgramLanguage = selLang;
+                string curMode = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase) ? "exact" : "cleanup";
+                SelectComboByTag(_cmbVoiceMode, curMode + ":" + selLang, "cleanup:en_fa");
+                _engine.Settings.Save();
+                _engine.ApplyFullAiConfiguration();
+            };
             dgLangCol.Children.Add(_cmbDeepgramLang);
             Grid.SetColumn(dgLangCol, 2);
             dgGrid.Children.Add(dgLangCol);
@@ -775,10 +784,10 @@ namespace GrammerV
             groqGrid.Children.Add(sttProvCol);
             dgInnerStack.Children.Add(groqGrid);
 
-            // Voice Output Mode Row: Cleanup Voice (Never Answers/Replies!) vs Exact Voice
+            // Voice Output Mode Row: Cleanup Voice (Never Answers/Replies!) vs Exact Voice + Language (Persian / English / Mixed)
             dgInnerStack.Children.Add(new TextBlock
             {
-                Text = "Voice Dictation Output Mode (Cleanup Voice vs Exact Voice)",
+                Text = "Voice Mode & Language (Cleanup Voice vs Exact Voice · Persian, English & English-Persian Mixed)",
                 Foreground = TextLight,
                 FontSize = 11.5,
                 FontWeight = FontWeights.SemiBold,
@@ -792,9 +801,27 @@ namespace GrammerV
                 Padding = new Thickness(8, 5, 8, 5),
                 Margin = new Thickness(0, 0, 0, 6)
             };
-            AddComboItem(_cmbVoiceMode, "cleanup", "✨ Cleanup Voice (Clean grammar, punctuation & fillers — NEVER answers/responds to your voice)");
-            AddComboItem(_cmbVoiceMode, "exact", "🎙 Exact Voice (Write exact spoken words verbatim without AI cleanup)");
-            SelectComboByTag(_cmbVoiceMode, _engine.Settings.VoiceMode, "cleanup");
+            AddComboItem(_cmbVoiceMode, "cleanup:en_fa", "✨ Cleanup Voice · English + Persian Mixed (Clean grammar & fillers — NEVER answers)");
+            AddComboItem(_cmbVoiceMode, "cleanup:fa", "✨ Cleanup Voice · Persian / فارسی (اصلاح نگارش و نیم‌فاصله — بدون پاسخ به صدا)");
+            AddComboItem(_cmbVoiceMode, "cleanup:en", "✨ Cleanup Voice · English Only (Clean English grammar & fillers — NEVER answers)");
+            AddComboItem(_cmbVoiceMode, "exact:en_fa", "🎙 Exact Voice · English + Persian Mixed (Write exact spoken words verbatim)");
+            AddComboItem(_cmbVoiceMode, "exact:fa", "🎙 Exact Voice · Persian / فارسی (تایپ دقیق کلمات گفته‌شده بدون تغییر)");
+            AddComboItem(_cmbVoiceMode, "exact:en", "🎙 Exact Voice · English Only (Write exact spoken words verbatim)");
+            string initVoiceMode = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase) ? "exact" : "cleanup";
+            string initVoiceLang = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
+            SelectComboByTag(_cmbVoiceMode, initVoiceMode + ":" + initVoiceLang, "cleanup:en_fa");
+            _cmbVoiceMode.SelectionChanged += delegate
+            {
+                string tag = GetSelectedComboTag(_cmbVoiceMode, "cleanup:en_fa");
+                string[] parts = tag.Split(':');
+                string m = (parts.Length > 0 && parts[0] == "exact") ? "exact" : "cleanup";
+                string l = (parts.Length > 1) ? GrammerVSettings.NormalizeVoiceLanguage(parts[1]) : "en_fa";
+                _engine.Settings.VoiceMode = m;
+                _engine.Settings.DeepgramLanguage = l;
+                SelectDeepgramLangInCombo(l);
+                _engine.Settings.Save();
+                _engine.ApplyFullAiConfiguration();
+            };
             dgInnerStack.Children.Add(_cmbVoiceMode);
 
             _groqStatusText = new TextBlock
@@ -1097,7 +1124,7 @@ namespace GrammerV
                 _overlay.UpdateShortWindowButtonsVisibility();
             };
 
-            _chkShowVoiceModeShort = MakeCheckBox("Show Voice Mode button (Clean / Exact) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowVoiceModeOnShortWindow);
+            _chkShowVoiceModeShort = MakeCheckBox("Show Voice Mode & Language buttons (Clean/Exact & EN+FA/FA/EN) on the short window above cursor (uncheck to hide)", _engine.Settings.ShowVoiceModeOnShortWindow);
             _chkShowVoiceModeShort.Checked += delegate
             {
                 _engine.Settings.ShowVoiceModeOnShortWindow = true;
@@ -1642,13 +1669,16 @@ namespace GrammerV
         private void SelectDeepgramLangInCombo(string langKey)
         {
             if (_cmbDeepgramLang == null) return;
-            string target = string.IsNullOrEmpty(langKey) ? "multi" : langKey.ToLowerInvariant();
+            string target = GrammerVSettings.NormalizeVoiceLanguage(langKey);
             for (int i = 0; i < _cmbDeepgramLang.Items.Count; i++)
             {
                 ComboBoxItem item = _cmbDeepgramLang.Items[i] as ComboBoxItem;
                 if (item != null && item.Tag != null && item.Tag.ToString() == target)
                 {
-                    _cmbDeepgramLang.SelectedIndex = i;
+                    if (_cmbDeepgramLang.SelectedIndex != i)
+                    {
+                        _cmbDeepgramLang.SelectedIndex = i;
+                    }
                     return;
                 }
             }
@@ -1660,9 +1690,9 @@ namespace GrammerV
             if (_cmbDeepgramLang != null && _cmbDeepgramLang.SelectedItem is ComboBoxItem)
             {
                 ComboBoxItem item = (ComboBoxItem)_cmbDeepgramLang.SelectedItem;
-                if (item.Tag != null) return item.Tag.ToString();
+                if (item.Tag != null) return GrammerVSettings.NormalizeVoiceLanguage(item.Tag.ToString());
             }
-            return "multi";
+            return "en_fa";
         }
 
         private string GetEnteredGoogleKey()
@@ -1884,7 +1914,14 @@ namespace GrammerV
         {
             _engine.Settings.GroqApiKey = GetEnteredGroqKey();
             _engine.Settings.SttProvider = GetSelectedComboTag(_cmbSttProvider, "auto");
-            _engine.Settings.VoiceMode = GetSelectedComboTag(_cmbVoiceMode, "cleanup");
+            string vmTag = GetSelectedComboTag(_cmbVoiceMode, "cleanup:en_fa");
+            string[] vmParts = vmTag.Split(':');
+            _engine.Settings.VoiceMode = (vmParts.Length > 0 && vmParts[0] == "exact") ? "exact" : "cleanup";
+            if (vmParts.Length > 1)
+            {
+                _engine.Settings.DeepgramLanguage = GrammerVSettings.NormalizeVoiceLanguage(vmParts[1]);
+                SelectDeepgramLangInCombo(_engine.Settings.DeepgramLanguage);
+            }
             _engine.Settings.VoiceAiApiKey = GetEnteredVoiceAiKey();
             _engine.Settings.TtsProvider = GetSelectedComboTag(_cmbTtsProvider, "auto");
         }

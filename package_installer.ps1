@@ -41,16 +41,32 @@ $readmeFile   = Join-Path $ProjectRoot "README.md"
 $licenseFile  = Join-Path $ProjectRoot "LICENSE.txt"
 $setupCs      = Join-Path $ProjectRoot "src\installer\FerdowsiSetup.cs"
 
-# 1. Compile Native 64-bit Windows Setup Wizard (FERDOWSI_Setup_v2.0.0.exe)
+# 1. Compile Native 64-bit Windows Setup Wizard (FERDOWSI_Setup_v2.0.0.exe) with asInvoker Manifest & GZip Payload (zero PE-in-PE heuristic popups)
 $fw = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
 $csc = Join-Path $fw "csc.exe"
 $setupOut = Join-Path $OutputDir "FERDOWSI_Setup_v2.0.0.exe"
+$appManifest = Join-Path $ProjectRoot "src\csharp\app.manifest"
+
+function Compress-ToGzipTemp([string]$srcFile, [string]$tempName) {
+    $outGz = Join-Path ([System.IO.Path]::GetTempPath()) $tempName
+    $bytes = [System.IO.File]::ReadAllBytes($srcFile)
+    $fs = [System.IO.File]::Create($outGz)
+    $gz = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Compress)
+    $gz.Write($bytes, 0, $bytes.Length)
+    $gz.Close()
+    $fs.Close()
+    return $outGz
+}
+
+$exeGz = Compress-ToGzipTemp $exeFile "payload_FERDOWSI.exe.gz"
+$dllGz = Compress-ToGzipTemp $dllFile "payload_grammerv_native.dll.gz"
 
 & $csc /nologo /codepage:65001 /utf8output /debug- /optimize+ /target:winexe /platform:x64 `
     /win32icon:$icoFile `
+    /win32manifest:$appManifest `
     /out:$setupOut `
-    /resource:"$exeFile,payload_FERDOWSI.exe" `
-    /resource:"$dllFile,payload_grammerv_native.dll" `
+    /resource:"$exeGz,payload_FERDOWSI.exe.gz" `
+    /resource:"$dllGz,payload_grammerv_native.dll.gz" `
     /resource:"$pyFile,payload_nlp_engine.py" `
     /resource:"$flagFile,payload_ferdowsi_flag.png" `
     /resource:"$icoFile,payload_FERDOWSI.ico" `
@@ -68,6 +84,7 @@ $setupOut = Join-Path $OutputDir "FERDOWSI_Setup_v2.0.0.exe"
     /r:"$fw\WPF\PresentationCore.dll" `
     /r:"$fw\WPF\PresentationFramework.dll" `
     $setupCs
+Remove-Item $exeGz, $dllGz -Force -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) { throw "Failed to compile FERDOWSI_Setup_v2.0.0.exe!" }
 
@@ -93,6 +110,9 @@ Copy-Item $manifestFile (Join-Path $appFolder "AppxManifest.xml") -Force
 Copy-Item $phiScript    (Join-Path $appFolder "enable_phi_silica.ps1") -Force
 Copy-Item $readmeFile   (Join-Path $appFolder "README.md") -Force
 Copy-Item $licenseFile  (Join-Path $appFolder "LICENSE.txt") -Force
+
+$launchBat = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -Command `"Get-ChildItem -Path '%~dp0' -Recurse | Unblock-File -ErrorAction SilentlyContinue`"`r`nstart `"`" `"%~dp0FERDOWSI.exe`"`r`n"
+[System.IO.File]::WriteAllText((Join-Path $appFolder "Launch_FERDOWSI.bat"), $launchBat, [System.Text.Encoding]::ASCII)
 
 $zipOut = Join-Path $OutputDir "FERDOWSI_Portable_v2.0.0_x64.zip"
 Compress-Archive -Path $appFolder -DestinationPath $zipOut -CompressionLevel Optimal -Force

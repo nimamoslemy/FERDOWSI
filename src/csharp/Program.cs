@@ -1,11 +1,22 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows;
 using Forms = System.Windows.Forms;
+
+[assembly: AssemblyTitle("FERDOWSI v2")]
+[assembly: AssemblyDescription("FERDOWSI v2 — English & Persian Writing Assistant, Voice Dictation, Read Aloud & AI Dictionary")]
+[assembly: AssemblyCompany("FERDOWSI Open Source")]
+[assembly: AssemblyProduct("FERDOWSI v2")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 FERDOWSI Open Source (MIT License)")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: ComVisible(false)]
 
 namespace GrammerV
 {
@@ -143,21 +154,23 @@ namespace GrammerV
             {
                 Directory.CreateDirectory(runtimeDir);
                 string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                NativeBridge.UnblockFileZoneIdentifier(Assembly.GetExecutingAssembly().Location);
+                NativeBridge.UnblockFileZoneIdentifier(Path.Combine(exeDir, "grammerv_native.dll"));
 
                 if (!File.Exists(Path.Combine(exeDir, "grammerv_native.dll")))
                 {
-                    ExtractResourceIfPresent("grammerv_native.dll", Path.Combine(runtimeDir, "grammerv_native.dll"));
+                    ExtractResourceIfPresent("grammerv_native.dll.gz", Path.Combine(runtimeDir, "grammerv_native.dll"), true);
                 }
                 if (!File.Exists(Path.Combine(exeDir, "engine", "nlp_engine.py")))
                 {
-                    ExtractResourceIfPresent("nlp_engine.py", Path.Combine(runtimeDir, "nlp_engine.py"));
+                    ExtractResourceIfPresent("nlp_engine.py", Path.Combine(runtimeDir, "nlp_engine.py"), false);
                 }
             }
             catch { }
             return runtimeDir;
         }
 
-        private static void ExtractResourceIfPresent(string resourceName, string destPath)
+        private static void ExtractResourceIfPresent(string resourceName, string destPath, bool isGzip)
         {
             try
             {
@@ -167,8 +180,19 @@ namespace GrammerV
                     if (s == null) return;
                     using (FileStream fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.Read))
                     {
-                        s.CopyTo(fs);
+                        if (isGzip)
+                        {
+                            using (GZipStream gz = new GZipStream(s, CompressionMode.Decompress))
+                            {
+                                gz.CopyTo(fs);
+                            }
+                        }
+                        else
+                        {
+                            s.CopyTo(fs);
+                        }
                     }
+                    NativeBridge.UnblockFileZoneIdentifier(destPath);
                 }
             }
             catch { }
@@ -399,6 +423,11 @@ namespace GrammerV
             check("Python 3 NLP JSON-RPC Connected", _engine.IsPythonConnected,
                 "Python v" + _engine.PythonVersion + " @ " + (_engine.PythonExePath ?? "fallback"));
 
+            string savedKey = _engine.Settings.GoogleApiKey;
+            string savedModel = _engine.Settings.GoogleModel;
+            string savedProvider = _engine.Settings.AiProvider;
+            _engine.ApplyAiConfiguration(savedKey, savedModel, "auto", false);
+
             AnalyzeResponse ar = _engine.Analyze("i has went to teh store yesterday for buying a apple and check my cursur", true);
             check("Grammar & Spelling Correction",
                 ar.IssueCount >= 4 && ar.Corrected.IndexOf("went to the store yesterday to buy an apple", StringComparison.OrdinalIgnoreCase) >= 0,
@@ -428,9 +457,6 @@ namespace GrammerV
                 arPersian.Corrected.Contains("سپاسگزارم"),
                 string.Format("{0} fixes in {1:0.0} ms -> \"{2}\"", arPersian.IssueCount, arPersian.ElapsedMs, arPersian.Corrected));
 
-            string savedKey = _engine.Settings.GoogleApiKey;
-            string savedModel = _engine.Settings.GoogleModel;
-            string savedProvider = _engine.Settings.AiProvider;
             _engine.ApplyAiConfiguration(savedKey, savedModel, savedProvider, false);
             check("Google Gemini Settings & Config Bridge",
                 !string.IsNullOrEmpty(savedModel) && !string.IsNullOrEmpty(savedProvider),

@@ -188,7 +188,15 @@ def main() -> int:
         "voice_mode": "exact",
     })
     assert exact_q["ok"] and exact_q["text"] == spoken_question and exact_q["voice_mode"] == "exact"
-    print(f"[PASS] FERDOWSI v2 Voice Modes verified: Cleanup='{clean_q['text']}' (non-responding guard active) | Exact='{exact_q['text']}'")
+
+    # Verify strict 3-language Voice Mode ('fa', 'en', 'en_fa') & foreign script sanitization
+    assert nlp_engine._normalize_voice_language("fa") == "fa"
+    assert nlp_engine._normalize_voice_language("en") == "en"
+    assert nlp_engine._normalize_voice_language("en_fa") == "en_fa"
+    assert nlp_engine._normalize_voice_language("multi") == "en_fa"
+    mixed_sample = "سلام، امروز جلسه API داریم"
+    assert nlp_engine._sanitize_en_fa_transcript(mixed_sample + " Привет", "en_fa") == mixed_sample
+    print(f"[PASS] FERDOWSI v2 Voice Modes & Languages (FA / EN / EN+FA) verified: Cleanup='{clean_q['text']}' | Exact='{exact_q['text']}'")
 
     for tone in ("fluent", "formal", "casual", "concise", "expand", "persuasive"):
         rw = nlp_engine.handle_request({

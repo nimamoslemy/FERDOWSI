@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -11,10 +13,27 @@ using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Forms = System.Windows.Forms;
 
+[assembly: AssemblyTitle("FERDOWSI v2 Installer")]
+[assembly: AssemblyDescription("FERDOWSI v2 — Official Windows User-Space Package Installer")]
+[assembly: AssemblyCompany("FERDOWSI Open Source")]
+[assembly: AssemblyProduct("FERDOWSI v2")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 FERDOWSI Open Source (MIT License)")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: ComVisible(false)]
+
 namespace FerdowsiInstaller
 {
     public class SetupWindow : Window
     {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool DeleteFileW(string lpFileName);
+
+        private static void UnblockFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return;
+            try { DeleteFileW(filePath + ":Zone.Identifier"); } catch { }
+        }
         private TextBox _pathBox;
         private CheckBox _chkDesktop;
         private CheckBox _chkStartMenu;
@@ -65,8 +84,8 @@ namespace FerdowsiInstaller
         {
             string[] required = new string[]
             {
-                "payload_FERDOWSI.exe",
-                "payload_grammerv_native.dll",
+                "payload_FERDOWSI.exe.gz",
+                "payload_grammerv_native.dll.gz",
                 "payload_nlp_engine.py",
                 "payload_ferdowsi_flag.png",
                 "payload_FERDOWSI.ico",
@@ -140,11 +159,15 @@ namespace FerdowsiInstaller
 
                 if (!string.IsNullOrEmpty(installDir) && Directory.Exists(installDir))
                 {
-                    ProcessStartInfo cleanupPsi = new ProcessStartInfo("cmd.exe",
-                        "/C ping 127.0.0.1 -n 2 > nul & rmdir /S /Q \"" + installDir + "\"");
-                    cleanupPsi.CreateNoWindow = true;
-                    cleanupPsi.UseShellExecute = false;
-                    Process.Start(cleanupPsi);
+                    string selfPath = Assembly.GetExecutingAssembly().Location;
+                    string[] files = Directory.GetFiles(installDir, "*", SearchOption.AllDirectories);
+                    for (int i = 0; i < files.Length; i++)
+                    {
+                        if (!string.Equals(files[i], selfPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            try { File.Delete(files[i]); } catch { }
+                        }
+                    }
                 }
 
                 MessageBox.Show("FERDOWSI has been uninstalled cleanly.", "FERDOWSI Uninstaller", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -426,19 +449,20 @@ namespace FerdowsiInstaller
                 Directory.CreateDirectory(Path.Combine(targetDir, "engine"));
                 Directory.CreateDirectory(Path.Combine(targetDir, "assets"));
 
-                ExtractTo("payload_FERDOWSI.exe", Path.Combine(targetDir, "FERDOWSI.exe"));
-                ExtractTo("payload_grammerv_native.dll", Path.Combine(targetDir, "grammerv_native.dll"));
-                ExtractTo("payload_nlp_engine.py", Path.Combine(targetDir, "engine", "nlp_engine.py"));
-                ExtractTo("payload_ferdowsi_flag.png", Path.Combine(targetDir, "assets", "ferdowsi_flag.png"));
-                ExtractTo("payload_FERDOWSI.ico", Path.Combine(targetDir, "FERDOWSI.ico"));
-                ExtractTo("payload_FERDOWSI.png", Path.Combine(targetDir, "FERDOWSI.png"));
-                ExtractTo("payload_AppxManifest.xml", Path.Combine(targetDir, "AppxManifest.xml"));
-                ExtractTo("payload_enable_phi_silica.ps1", Path.Combine(targetDir, "enable_phi_silica.ps1"));
-                ExtractTo("payload_README.md", Path.Combine(targetDir, "README.md"));
-                ExtractTo("payload_LICENSE.txt", Path.Combine(targetDir, "LICENSE.txt"));
+                ExtractTo("payload_FERDOWSI.exe.gz", Path.Combine(targetDir, "FERDOWSI.exe"), true);
+                ExtractTo("payload_grammerv_native.dll.gz", Path.Combine(targetDir, "grammerv_native.dll"), true);
+                ExtractTo("payload_nlp_engine.py", Path.Combine(targetDir, "engine", "nlp_engine.py"), false);
+                ExtractTo("payload_ferdowsi_flag.png", Path.Combine(targetDir, "assets", "ferdowsi_flag.png"), false);
+                ExtractTo("payload_FERDOWSI.ico", Path.Combine(targetDir, "FERDOWSI.ico"), false);
+                ExtractTo("payload_FERDOWSI.png", Path.Combine(targetDir, "FERDOWSI.png"), false);
+                ExtractTo("payload_AppxManifest.xml", Path.Combine(targetDir, "AppxManifest.xml"), false);
+                ExtractTo("payload_enable_phi_silica.ps1", Path.Combine(targetDir, "enable_phi_silica.ps1"), false);
+                ExtractTo("payload_README.md", Path.Combine(targetDir, "README.md"), false);
+                ExtractTo("payload_LICENSE.txt", Path.Combine(targetDir, "LICENSE.txt"), false);
 
                 string uninstallerPath = Path.Combine(targetDir, "Uninstall_FERDOWSI.exe");
                 File.Copy(Assembly.GetExecutingAssembly().Location, uninstallerPath, true);
+                UnblockFile(uninstallerPath);
 
                 string exePath = Path.Combine(targetDir, "FERDOWSI.exe");
                 string icoPath = Path.Combine(targetDir, "FERDOWSI.ico");
@@ -503,7 +527,7 @@ namespace FerdowsiInstaller
             }
         }
 
-        private static void ExtractTo(string resourceName, string destPath)
+        private static void ExtractTo(string resourceName, string destPath, bool isGzip)
         {
             Assembly asm = Assembly.GetExecutingAssembly();
             using (Stream s = asm.GetManifestResourceStream(resourceName))
@@ -511,8 +535,19 @@ namespace FerdowsiInstaller
                 if (s == null) throw new InvalidOperationException("Missing embedded resource: " + resourceName);
                 using (FileStream fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    s.CopyTo(fs);
+                    if (isGzip)
+                    {
+                        using (GZipStream gz = new GZipStream(s, CompressionMode.Decompress))
+                        {
+                            gz.CopyTo(fs);
+                        }
+                    }
+                    else
+                    {
+                        s.CopyTo(fs);
+                    }
                 }
+                UnblockFile(destPath);
             }
         }
 

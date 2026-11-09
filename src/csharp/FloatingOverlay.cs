@@ -84,6 +84,7 @@ namespace GrammerV
         private TextBlock _pillSummaryText;
         private Button _pillMicBtn;
         private Button _pillVoiceModeBtn;
+        private Button _pillVoiceLangBtn;
         private Button _pillReadAloudBtn;
         private Button _pillQuickFixBtn;
 
@@ -93,6 +94,7 @@ namespace GrammerV
         private TextBlock _cardTimingBadge;
         private Button _cardMicBtn;
         private Button _cardVoiceModeBtn;
+        private Button _cardVoiceLangBtn;
         private Button _cardReadAloudBtn;
         private Button _aiModeToggleBtn;
         private Button _tabCorrectBtn;
@@ -356,11 +358,18 @@ namespace GrammerV
             _pillMicBtn.Click += OnMicButtonClicked;
 
             _pillVoiceModeBtn = CreateSmallButton("Clean", EmeraldDark, EmeraldSoft);
-            _pillVoiceModeBtn.Margin = new Thickness(0, 0, 3, 0);
+            _pillVoiceModeBtn.Margin = new Thickness(0, 0, 2, 0);
             _pillVoiceModeBtn.Padding = new Thickness(5, 2, 5, 2);
             _pillVoiceModeBtn.FontSize = 10.2;
             _pillVoiceModeBtn.ToolTip = "Toggle Voice Output Mode: 'Cleanup Voice' (cleans grammar & fillers without answering) vs 'Exact Voice' (exact words spoken)";
             _pillVoiceModeBtn.Click += OnVoiceModeToggleClicked;
+
+            _pillVoiceLangBtn = CreateSmallButton("EN+FA", BgChip, EmeraldSoft);
+            _pillVoiceLangBtn.Margin = new Thickness(0, 0, 3, 0);
+            _pillVoiceLangBtn.Padding = new Thickness(5, 2, 5, 2);
+            _pillVoiceLangBtn.FontSize = 10.0;
+            _pillVoiceLangBtn.ToolTip = "Cycle Voice Language: English + Persian Mixed (EN+FA) → Persian Only (FA) → English Only (EN)";
+            _pillVoiceLangBtn.Click += OnVoiceLangCycleClicked;
 
             _pillReadAloudBtn = CreateSmallButton("🔊", BgChip, EmeraldSoft);
             _pillReadAloudBtn.Margin = new Thickness(0, 0, 3, 0);
@@ -393,6 +402,7 @@ namespace GrammerV
             pillRow.Children.Add(_pillSummaryText);
             pillRow.Children.Add(_pillMicBtn);
             pillRow.Children.Add(_pillVoiceModeBtn);
+            pillRow.Children.Add(_pillVoiceLangBtn);
             pillRow.Children.Add(_pillReadAloudBtn);
             pillRow.Children.Add(_pillQuickFixBtn);
             pillRow.Children.Add(pillCloseBtn);
@@ -458,10 +468,15 @@ namespace GrammerV
             _cardMicBtn.Margin = new Thickness(0, 0, 3, 0);
             _cardMicBtn.Click += OnMicButtonClicked;
 
-            _cardVoiceModeBtn = CreateSmallButton("Voice: Clean ✨", EmeraldDark, EmeraldSoft);
+            _cardVoiceModeBtn = CreateSmallButton("Clean ✨", EmeraldDark, EmeraldSoft);
             _cardVoiceModeBtn.ToolTip = "Toggle Voice Mode: 'Cleanup Voice' (cleans voice transcript without answering) vs 'Exact Voice' (exact words spoken)";
-            _cardVoiceModeBtn.Margin = new Thickness(0, 0, 3, 0);
+            _cardVoiceModeBtn.Margin = new Thickness(0, 0, 2, 0);
             _cardVoiceModeBtn.Click += OnVoiceModeToggleClicked;
+
+            _cardVoiceLangBtn = CreateSmallButton("EN+FA", BgChip, EmeraldSoft);
+            _cardVoiceLangBtn.ToolTip = "Cycle Voice Language: English + Persian Mixed (EN+FA) → Persian Only (FA) → English Only (EN)";
+            _cardVoiceLangBtn.Margin = new Thickness(0, 0, 3, 0);
+            _cardVoiceLangBtn.Click += OnVoiceLangCycleClicked;
 
             _cardReadAloudBtn = CreateSmallButton("🔊 Read", BgChip, EmeraldSoft);
             _cardReadAloudBtn.ToolTip = "Read Aloud (Gemini / Deepgram Aura / Voice AI)";
@@ -524,6 +539,7 @@ namespace GrammerV
 
             headerActions.Children.Add(_cardMicBtn);
             headerActions.Children.Add(_cardVoiceModeBtn);
+            headerActions.Children.Add(_cardVoiceLangBtn);
             headerActions.Children.Add(_cardReadAloudBtn);
             headerActions.Children.Add(grabBtn);
             headerActions.Children.Add(_aiModeToggleBtn);
@@ -954,20 +970,64 @@ namespace GrammerV
             }
         }
 
+        private void OnVoiceLangCycleClicked(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _lastActivityUtc = DateTime.UtcNow;
+            string cur = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
+            string next;
+            string desc;
+            if (cur == "en_fa")
+            {
+                next = "fa";
+                desc = "Persian Only / فقط فارسی (FA)";
+            }
+            else if (cur == "fa")
+            {
+                next = "en";
+                desc = "English Only (EN)";
+            }
+            else
+            {
+                next = "en_fa";
+                desc = "English + Persian Mixed (EN+FA)";
+            }
+            _engine.Settings.DeepgramLanguage = next;
+            _engine.Settings.Save();
+            _engine.ApplyFullAiConfiguration();
+            UpdateVoiceModeAppearance();
+            _pillSummaryText.Text = "🎤 Lang: " + desc;
+            _cardTimingBadge.Text = "Voice Language: " + desc;
+        }
+
         private void UpdateVoiceModeAppearance()
         {
             bool isExact = string.Equals(_engine.Settings.VoiceMode, "exact", StringComparison.OrdinalIgnoreCase);
+            string vLang = GrammerVSettings.NormalizeVoiceLanguage(_engine.Settings.DeepgramLanguage);
+            string langBadge = (vLang == "fa") ? "FA" : ((vLang == "en") ? "EN" : "EN+FA");
             if (_pillVoiceModeBtn != null)
             {
                 _pillVoiceModeBtn.Content = isExact ? "Exact" : "Clean";
                 _pillVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
                 _pillVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
             }
+            if (_pillVoiceLangBtn != null)
+            {
+                _pillVoiceLangBtn.Content = langBadge;
+                _pillVoiceLangBtn.Background = BgChip;
+                _pillVoiceLangBtn.Foreground = EmeraldSoft;
+            }
             if (_cardVoiceModeBtn != null)
             {
-                _cardVoiceModeBtn.Content = isExact ? "Voice: Exact 🎙" : "Voice: Clean ✨";
+                _cardVoiceModeBtn.Content = isExact ? "Exact 🎙" : "Clean ✨";
                 _cardVoiceModeBtn.Background = isExact ? BgChip : EmeraldDark;
                 _cardVoiceModeBtn.Foreground = isExact ? TextPrimary : EmeraldSoft;
+            }
+            if (_cardVoiceLangBtn != null)
+            {
+                _cardVoiceLangBtn.Content = langBadge;
+                _cardVoiceLangBtn.Background = BgChip;
+                _cardVoiceLangBtn.Foreground = EmeraldSoft;
             }
         }
 
@@ -977,11 +1037,16 @@ namespace GrammerV
             {
                 _pillMicBtn.Visibility = _engine.Settings.ShowMicOnShortWindow ? Visibility.Visible : Visibility.Collapsed;
             }
+            Visibility vmVis = (_engine.Settings.ShowMicOnShortWindow && _engine.Settings.ShowVoiceModeOnShortWindow)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             if (_pillVoiceModeBtn != null)
             {
-                _pillVoiceModeBtn.Visibility = (_engine.Settings.ShowMicOnShortWindow && _engine.Settings.ShowVoiceModeOnShortWindow)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
+                _pillVoiceModeBtn.Visibility = vmVis;
+            }
+            if (_pillVoiceLangBtn != null)
+            {
+                _pillVoiceLangBtn.Visibility = vmVis;
             }
             if (_pillReadAloudBtn != null)
             {

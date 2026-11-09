@@ -41,7 +41,7 @@ namespace GrammerV
             DeepSeekApiKey = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY") ?? string.Empty;
             DeepSeekModel = "deepseek-chat";
             DeepgramApiKey = Environment.GetEnvironmentVariable("DEEPGRAM_API_KEY") ?? string.Empty;
-            DeepgramLanguage = "multi";
+            DeepgramLanguage = "en_fa";
             GroqApiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? string.Empty;
             GroqModel = "whisper-large-v3-turbo";
             SttProvider = "auto";
@@ -65,6 +65,15 @@ namespace GrammerV
                 return "gemini-3.1-flash-lite-preview";
             }
             return m;
+        }
+
+        public static string NormalizeVoiceLanguage(string lang)
+        {
+            if (string.IsNullOrEmpty(lang)) return "en_fa";
+            string s = lang.Trim().ToLowerInvariant();
+            if (s == "fa" || s == "persian" || s == "farsi") return "fa";
+            if (s == "en" || s == "en-us" || s == "en-gb" || s == "english") return "en";
+            return "en_fa";
         }
 
         private static string GetPrimarySettingsPath()
@@ -98,7 +107,7 @@ namespace GrammerV
                         {
                             loaded.GoogleModel = NormalizeModelName(loaded.GoogleModel);
                             if (string.IsNullOrEmpty(loaded.DeepSeekModel)) loaded.DeepSeekModel = "deepseek-chat";
-                            if (string.IsNullOrEmpty(loaded.DeepgramLanguage)) loaded.DeepgramLanguage = "multi";
+                            loaded.DeepgramLanguage = NormalizeVoiceLanguage(loaded.DeepgramLanguage);
                             if (string.IsNullOrEmpty(loaded.GroqModel)) loaded.GroqModel = "whisper-large-v3-turbo";
                             if (string.IsNullOrEmpty(loaded.SttProvider)) loaded.SttProvider = "auto";
                             if (string.IsNullOrEmpty(loaded.VoiceMode)) loaded.VoiceMode = "cleanup";
@@ -323,7 +332,7 @@ namespace GrammerV
 
         public bool HasAnySttKey
         {
-            get { return HasDeepgramKey || HasGroqKey; }
+            get { return HasDeepgramKey || HasGroqKey || HasGoogleKey; }
         }
 
         public bool HasVoiceAiKey

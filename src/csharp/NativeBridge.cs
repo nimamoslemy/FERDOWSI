@@ -216,6 +216,19 @@ namespace GrammerV
             }
         }
 
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool DeleteFileW(string lpFileName);
+
+        public static void UnblockFileZoneIdentifier(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return;
+            try
+            {
+                DeleteFileW(filePath + ":Zone.Identifier");
+            }
+            catch { }
+        }
+
         public static bool InitializeNativeDll(string runtimeDir)
         {
             try
@@ -227,6 +240,7 @@ namespace GrammerV
                 string chosen = File.Exists(candidate1) ? candidate1 : candidate2;
                 if (File.Exists(chosen))
                 {
+                    UnblockFileZoneIdentifier(chosen);
                     SetDllDirectoryW(Path.GetDirectoryName(chosen));
                     IntPtr h = LoadLibraryW(chosen);
                     if (h != IntPtr.Zero)

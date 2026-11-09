@@ -80,10 +80,20 @@ if (-not (Test-Path $gpp)) {
 }
 $dllOut = Join-Path $ProjectRoot "grammerv_native.dll"
 $cppSrc = Join-Path $ProjectRoot "src\cpp\grammerv_native.cpp"
-
-& $gpp -O3 -s -std=c++20 -shared -static -static-libgcc -static-libstdc++ `
-    -o $dllOut $cppSrc `
-    -luser32 -lgdi32 -lole32 -loleaut32 -loleacc -luuid -lwinmm
+$rcSrc  = Join-Path $ProjectRoot "src\cpp\grammerv_version.rc"
+$rcObj  = Join-Path ([System.IO.Path]::GetTempPath()) "grammerv_version.o"
+$windres = Join-Path (Split-Path -Parent $gpp) "windres.exe"
+if ((Test-Path $windres) -and (Test-Path $rcSrc)) {
+    & $windres -i $rcSrc -o $rcObj
+    & $gpp -O3 -s -std=c++20 -shared -static -static-libgcc -static-libstdc++ `
+        -o $dllOut $cppSrc $rcObj `
+        -luser32 -lgdi32 -lole32 -loleaut32 -loleacc -luuid -lwinmm
+    Remove-Item $rcObj -Force -ErrorAction SilentlyContinue
+} else {
+    & $gpp -O3 -s -std=c++20 -shared -static -static-libgcc -static-libstdc++ `
+        -o $dllOut $cppSrc `
+        -luser32 -lgdi32 -lole32 -loleaut32 -loleacc -luuid -lwinmm
+}
 if ($LASTEXITCODE -ne 0) { throw "C++ DLL compilation failed!" }
 Write-Host ("[2/4] Compiled stripped C++20 grammerv_native.dll in {0} ms" -f $stepSw.ElapsedMilliseconds) -ForegroundColor Green
 
@@ -113,10 +123,20 @@ $csFiles = @(
     (Join-Path $ProjectRoot "src\csharp\Program.cs")
 )
 
+$appManifest = Join-Path $ProjectRoot "src\csharp\app.manifest"
+$dllGz = Join-Path ([System.IO.Path]::GetTempPath()) "grammerv_native.dll.gz"
+$inBytes = [System.IO.File]::ReadAllBytes($dllOut)
+$fsGz = [System.IO.File]::Create($dllGz)
+$gzStream = New-Object System.IO.Compression.GZipStream($fsGz, [System.IO.Compression.CompressionMode]::Compress)
+$gzStream.Write($inBytes, 0, $inBytes.Length)
+$gzStream.Close()
+$fsGz.Close()
+
 & $csc /nologo /codepage:65001 /utf8output /debug- /optimize+ /target:winexe /platform:x64 `
     /win32icon:$icoPath `
+    /win32manifest:$appManifest `
     /out:$exeOut `
-    /resource:"$dllOut,grammerv_native.dll" `
+    /resource:"$dllGz,grammerv_native.dll.gz" `
     /resource:"$pyDst,nlp_engine.py" `
     /resource:"$flagAsset,ferdowsi_flag.png" `
     /r:"$fw\System.dll" `
@@ -131,6 +151,7 @@ $csFiles = @(
     /r:"$fw\WPF\UIAutomationClient.dll" `
     /r:"$fw\WPF\UIAutomationTypes.dll" `
     $csFiles
+Remove-Item $dllGz -Force -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) { throw "C# FERDOWSI.exe compilation failed!" }
 Write-Host ("[4/4] Compiled 64-bit standalone FERDOWSI.exe in {0} ms" -f $stepSw.ElapsedMilliseconds) -ForegroundColor Green
